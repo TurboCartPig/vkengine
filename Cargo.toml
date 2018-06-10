@@ -1,0 +1,10 @@
+[package]
+name = "vkengine"
+version = "0.1.0"
+authors = ["Dennis Kristiansen <dennkris@live.no>"]
+
+[dependencies]
+winit = "*"
+vulkano = "*"
+vulkano-win = "*"
+# vulkano-shader-derive = "*"
