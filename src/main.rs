@@ -6,6 +6,7 @@ extern crate vulkano;
 // extern crate vulkano_shader_derive;
 
 use vulkano::instance;
+use vulkano::instance::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::Device;
 
 fn main() {
@@ -24,29 +25,67 @@ fn main() {
         let physical = {
             println!("Listing enumerated devices...\n");
 
-            // Get all discrete gpus that supprort graphics
-            let mut physical_devices = instance::PhysicalDevice::enumerate(&instance)
-                // Print the gpus
-                .inspect(|d| {
-                    let mut device_info = String::new();
+            //let mut devices: Vec<(PhysicalDevice, u32)> = physical_devices.zip(physical_devices_scores)
+            let mut devices = PhysicalDevice::enumerate(&instance)
+                .map(|device| {
+                    let mut score = 0u32;
 
-                    device_info += &format!("Device name: {}\n", d.name());
-                    device_info += &format!("Device type: {:?}\n", d.ty());
-                    device_info += &format!("Device api version: {:?}\n", d.api_version());
+                    // Score for device type
+                    match device.ty() {
+                        PhysicalDeviceType::DiscreteGpu => score += 10_000u32,
+                        PhysicalDeviceType::IntegratedGpu => score += 5_000u32,
+                        _ => (),
+                    }
 
-                    println!("{}", device_info);
+                    // Score for device api version
+                    let ver = device.api_version();
+                    score += (ver.major * 1_000) as u32;
+                    score += (ver.minor * 100) as u32;
+                    score += (ver.patch * 2) as u32;
+
+                    // Query for graphics and compute support
+                    {
+                        let support_graphics = device.queue_families()
+                            .filter(|qf| {
+                                qf.supports_graphics()
+                            })
+                            .next()
+                            .is_some();
+
+                        let support_compute = device.queue_families()
+                            .filter(|qf| {
+                                qf.supports_compute()
+                            })
+                            .next()
+                            .is_some();
+
+                        // Graphics and compute are hard reqs
+                        if !support_graphics || !support_compute {
+                            score = 0;
+                        };
+                    }
+
+                    (device, score)
                 })
-                // We only want discrete gpus
-                .filter(|d| d.ty() == instance::PhysicalDeviceType::DiscreteGpu)
-                // We only want gpus that support graphics
-                .filter(|d| d.queue_families().filter(|qf| qf.supports_graphics()).next().is_some())
+                .inspect(|(device, score)| {
+                    println!("\
+                        Device name: {}\n\
+                        Device type: {:?}\n\
+                        Device api version: {:?}\n\
+                        Device score: {}\n",
+                        device.name(),
+                        device.ty(),
+                        device.api_version(),
+                        score
+                    );
+                })
                 .collect::<Vec<_>>();
 
-            // Sort them by vulkan version
-            physical_devices.sort_by(|a, b| a.api_version().into_vulkan_version().cmp(&b.api_version().into_vulkan_version()));
+            // Sort them by score
+            devices.sort_by(|(_, a), (_, b)| b.cmp(&a));
 
-            // Choose the discrete gpu with the highest vulkan version
-            let physical = physical_devices.get(0).expect("No discrete gpus supports graphics").clone();
+            let (physical, score) = devices.get(0).unwrap().clone();
+            assert_ne!(score, 0u32);
 
             physical
         };
