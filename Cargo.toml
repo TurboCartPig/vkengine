@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Dennis Kristiansen <dennkris@live.no>"]
 
 [dependencies]
-winit = "*"
-vulkano = "*"
-vulkano-win = "*"
+winit = "0.16"
+vulkano = "0.9"
+# vulkano-win = "0.9"
 # vulkano-shader-derive = "*"
