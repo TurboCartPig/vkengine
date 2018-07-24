@@ -10,7 +10,7 @@ mod vulkano_win;
 use vulkano_win::VkSurfaceBuild;
 
 use vulkano::instance;
-use vulkano::instance::{PhysicalDevice, PhysicalDeviceType, DeviceExtensions, QueueFamily};
+use vulkano::instance::{PhysicalDevice, PhysicalDeviceType, DeviceExtensions};
 use vulkano::device::Device;
 use vulkano::sync::{GpuFuture, now, FlushError};
 use vulkano::swapchain;
@@ -18,7 +18,6 @@ use vulkano::swapchain::{AcquireError, SwapchainCreationError};
 
 #[derive(Debug, Clone)]
 struct QueueFamilyIds {
-    pub present: Option<u32>,
     pub graphics: Option<u32>,
     pub compute: Option<u32>,
     pub transfer: Option<u32>,
@@ -27,7 +26,6 @@ struct QueueFamilyIds {
 impl QueueFamilyIds {
     pub fn none() -> Self {
         Self {
-            present: None,
             graphics: None,
             compute: None,
             transfer: None,
@@ -42,10 +40,6 @@ impl Iterator for QueueFamilyIds {
     // TODO Tune queue family priority
     // Returns queue family id and the priority its operations should have on the gpu
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(ret) = self.present {
-            self.present = None;
-            return Some((ret, 1.0));
-        }
         if let Some(ret) = self.graphics {
             self.graphics = None;
             return Some((ret, 1.0));
@@ -78,6 +72,7 @@ fn main() {
         };
 
         let surface = winit::WindowBuilder::new()
+            .with_title("VK Engine")
             .build_vk_surface(&events_loop, instance.clone())
             .unwrap();
 
@@ -105,6 +100,8 @@ fn main() {
 
                     // Stores the ids for the queue families we want to use
                     // We assume that there is only one queue family for each operation (this is true for most vulkan implementations)
+                    // For Nvidia gpu we expect one graphics family with 16 queues and a single transfer Queue
+                    // Intel only has one general queue
                     let queue_family_ids = {
                         let mut queue_family_ids = QueueFamilyIds::none();
 
@@ -130,28 +127,13 @@ fn main() {
                                 id as u32
                             });
 
-                        // Find queue family that can present to our surface, but is not our graphics queue family
-                        queue_family_ids.present = device.queue_families()
-                            .enumerate()
-                            .find(|(id, qf)| {
-                                score += 100;
-                                surface.is_supported(*qf).unwrap_or(false) && !qf.supports_graphics()
-                            })
-                            .map(|(id, _)| {
-                                id as u32
-                            });
-
                         // Find queue family that supports graphics
-                        // The graphics queue family will have to present if we do not have a dedicated present queue family
+                        // The graphics queue family also has to support presenting to the surface
                         queue_family_ids.graphics = device.queue_families()
                             .enumerate()
                             .find(|(id, qf)| {
                                 score += 200;
-                                if queue_family_ids.present == None {
-                                    qf.supports_graphics() && surface.is_supported(*qf).unwrap_or(false)
-                                } else {
-                                    qf.supports_graphics()
-                                }
+                                qf.supports_graphics() && surface.is_supported(*qf).unwrap_or(false)
                             })
                             .map(|(id, _)| {
                                 id as u32
@@ -190,17 +172,22 @@ fn main() {
             (physical, queue_family_ids)
         };
 
-        // We only care about the graphics queue family for now
-        //let qf = queue_family_ids.graphics.unwrap();
-        //let qf = physical.queue_family_by_id(qf as u32).unwrap();
+        println!("Physical device chosen: {:?}\n", physical.name());
 
-        let queue_families= queue_family_ids
-            .map(|(id, pri)| {
-                (physical.queue_family_by_id(id).unwrap(), pri)
-            })
-            .collect::<Vec<_>>();
+        let mut queues = Vec::with_capacity(4);
 
-        println!("Queue Families: {:?}", queue_families);
+        // Add a transfer queue if we have any
+        if let Some(id) = queue_family_ids.transfer {
+            queues.push((physical.queue_family_by_id(id).unwrap(), 0.5f32));
+        }
+        // Add a few graphics queues
+        if let Some(id) = queue_family_ids.graphics {
+            for _ in 0..1 {
+                queues.push((physical.queue_family_by_id(id).unwrap(), 1.0f32))
+            }
+        }
+
+        println!("Queues to be created: {:?}", queues);
 
         // TODO: Check for minimum required features
         let features = instance::Features::none();
@@ -215,7 +202,9 @@ fn main() {
         // Check if requirements are met
         assert_eq!(device_extensions, required_extensions);
 
-        let (device, qiter) = Device::new(physical, &features, &device_extensions, queue_families.iter().cloned()).expect("Failed to create logical device");
+        let (device, qiter) = Device::new(physical, &features, &device_extensions, queues.iter().cloned()).expect("Failed to create logical device");
+
+        println!("Queue Iter: {:?}", qiter);
 
         (device, qiter, surface)
     };
@@ -284,8 +273,9 @@ fn main() {
     let mut swapchain_invalid = false;
     let mut previous_frame_end = Box::new(now(device.clone())) as Box<GpuFuture>;
 
-    // TODO Make a struct of the queues I want to use or something
-    let queue = qiter.next().expect("Failed to get queue");
+    // We added graphics queues last so we know there is one
+    let present_queue = qiter.last().expect("Failed to get queue");
+    println!("Queue: {:?}", present_queue);
 
     'gameloop: loop {
         previous_frame_end.cleanup_finished();
@@ -318,7 +308,7 @@ fn main() {
         };
 
         let present_future = previous_frame_end.join(acquired_future)
-            .then_swapchain_present(queue.clone(), swapchain.clone(), image_number)
+            .then_swapchain_present(present_queue.clone(), swapchain.clone(), image_number)
             .then_signal_fence_and_flush();
 
         match present_future {
