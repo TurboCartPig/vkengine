@@ -7,4 +7,4 @@ authors = ["Dennis Kristiansen <dennkris@live.no>"]
 winit = "0.16"
 vulkano = "0.9"
 # vulkano-win = "0.9"
-# vulkano-shader-derive = "*"
+vulkano-shader-derive = "*"

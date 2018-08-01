@@ -2,22 +2,32 @@ extern crate winit;
 #[macro_use]
 extern crate vulkano;
 //extern crate vulkano_win;
-// #[macro_use]
-// extern crate vulkano_shader_derive;
+#[macro_use]
+extern crate vulkano_shader_derive;
 
 mod vulkano_win;
 
 use vulkano_win::VkSurfaceBuild;
 
+use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage};
+use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
+use vulkano::framebuffer::{Framebuffer, Subpass};
 use vulkano::instance;
-use vulkano::instance::{PhysicalDevice, PhysicalDeviceType, DeviceExtensions};
+use vulkano::instance::{PhysicalDevice, PhysicalDeviceType, DeviceExtensions, InstanceExtensions};
+use vulkano::instance::debug::{DebugCallback, MessageTypes};
 use vulkano::device::Device;
-use vulkano::sync::{GpuFuture, now, FlushError};
+use vulkano::sync;
+use vulkano::sync::{GpuFuture, FlushError};
+use vulkano::pipeline::{GraphicsPipeline, viewport::Viewport};
 use vulkano::swapchain;
 use vulkano::swapchain::{AcquireError, SwapchainCreationError};
 
+use std::cmp::{min, max};
+use std::sync::Arc;
+
 #[derive(Debug, Clone)]
 struct QueueFamilyIds {
+    pub general: Option<u32>,
     pub graphics: Option<u32>,
     pub compute: Option<u32>,
     pub transfer: Option<u32>,
@@ -26,6 +36,7 @@ struct QueueFamilyIds {
 impl QueueFamilyIds {
     pub fn none() -> Self {
         Self {
+            general: None,
             graphics: None,
             compute: None,
             transfer: None,
@@ -34,41 +45,117 @@ impl QueueFamilyIds {
 }
 
 impl Iterator for QueueFamilyIds {
-    type Item = (u32, f32);
+    type Item = u32;
 
     // TODO Find a better way to do all this
-    // TODO Tune queue family priority
-    // Returns queue family id and the priority its operations should have on the gpu
     fn next(&mut self) -> Option<Self::Item> {
+        if let Some(ret) = self.general {
+            self.general = None;
+            return Some(ret);
+        }
         if let Some(ret) = self.graphics {
             self.graphics = None;
-            return Some((ret, 1.0));
+            return Some(ret);
         }
         if let Some(ret) = self.compute {
             self.compute = None;
-            return Some((ret, 0.5));
+            return Some(ret);
         }
         if let Some(ret) = self.transfer {
             self.transfer = None;
-            return Some((ret, 0.3));
+            return Some(ret);
         }
         None
     }
 }
 
+// TODO Put everything in a struct
 fn main() {
     let mut events_loop = winit::EventsLoop::new();
 
-    let (device, mut qiter, surface) = {
+    let (device, mut qiter, surface, _callback) = {
         let instance = {
             let info = app_info_from_cargo_toml!();
 
-            // TODO: Use intersection between supported and desired extensions
-            let extensions = vulkano::instance::InstanceExtensions::supported_by_core().expect("Failed to load supported instance extensions");
+            let extensions = {
+                let desired = InstanceExtensions {
+                    // Generic
+                    khr_surface: true,
+                    khr_display: true,
 
-            //let layers = &instance::layers_list().unwrap();
+                    // Linux
+                    khr_xlib_surface: true,
+                    khr_xcb_surface: true,
+                    khr_wayland_surface: true,
+                    khr_mir_surface: true,
 
-            instance::Instance::new(Some(&info), &extensions, None).unwrap()
+                    // Android
+                    khr_android_surface: true,
+
+                    // Windows
+                    khr_win32_surface: true,
+
+                    // Apple
+                    mvk_ios_surface: true,
+                    mvk_macos_surface: true,
+
+                    // Debuging
+                    ext_debug_report: true,
+
+
+                    .. InstanceExtensions::none()
+                };
+
+                let supported = InstanceExtensions::supported_by_core().expect("Failed to load supported instance extensions");
+
+                supported.intersection(&desired)
+            };
+
+            println!("Requested extensions: {:?}\n", extensions);
+
+            let layers = {
+                let desired = [
+                    //"VK_LAYER_LUNARG_api_dump",
+                    //"VK_LAYER_LUNARG_core_validation",
+                    //"VK_LAYER_LUNARG_device_simulation",
+                    //"VK_LAYER_LUNARG_monitor",
+                    //"VK_LAYER_LUNARG_object_tracker",
+                    //"VK_LAYER_LUNARG_parameter_validation",
+                    //"VK_LAYER_LUNARG_screenshot",
+                    "VK_LAYER_LUNARG_standard_validation",
+                    //"VK_LAYER_LUNARG_vktrace",
+                ];
+
+                for dlayer in desired.clone().iter() {
+                    let mut available = instance::layers_list().unwrap();
+
+                    available.find(|alayer| {
+                        alayer.name() == *dlayer
+                    })
+                    .expect("Failed to find validation layer");
+                }
+
+                desired
+            };
+
+            println!("Requested layers: {:?}\n", layers);
+
+            instance::Instance::new(Some(&info), &extensions, layers.iter()).unwrap()
+        };
+
+        let _callback = {
+            let message_types = MessageTypes {
+                error: true,
+                warning: true,
+                performance_warning: true,
+                information: false,
+                debug: true,
+            };
+
+            DebugCallback::new(&instance, message_types, |msg| {
+                println!("Debug callback from {}: {}", msg.layer_prefix, msg.description);
+            })
+            .ok()
         };
 
         let surface = winit::WindowBuilder::new()
@@ -98,19 +185,34 @@ fn main() {
                     score += (ver.minor * 100) as u32;
                     score += (ver.patch * 2) as u32;
 
-                    // Stores the ids for the queue families we want to use
-                    // We assume that there is only one queue family for each operation (this is true for most vulkan implementations)
-                    // For Nvidia gpu we expect one graphics family with 16 queues and a single transfer Queue
-                    // Intel only has one general queue
+                    // We assume that the queue families are all unique
+                    // For Nvidia gpus we can expect 16 general queues in one queue family
+                    // For Intel gpus we can expect 1 general queue
+                    // For AMD gpus
                     let queue_family_ids = {
                         let mut queue_family_ids = QueueFamilyIds::none();
+
+                        // Find a general queue family
+                        // A general queue family supports all operations
+                        queue_family_ids.general = device.queue_families()
+                            .enumerate()
+                            .find(|(_, qf)| {
+                                qf.supports_transfers() &&
+                                qf.supports_compute() &&
+                                qf.supports_graphics() &&
+                                surface.is_supported(*qf).unwrap_or(false)
+                            })
+                            .map(|(id, _)| {
+                                id as u32
+                            });
 
                         // Find queue family that only supports transfers
                         queue_family_ids.transfer = device.queue_families()
                             .enumerate()
-                            .find(|(id, qf)| {
-                                score += 200;
-                                qf.supports_transfers() && !qf.supports_compute() || !qf.supports_graphics()
+                            .find(|(_, qf)| {
+                                qf.supports_transfers() &&
+                                !qf.supports_compute() &&
+                                !qf.supports_graphics()
                             })
                             .map(|(id, _)| {
                                 id as u32
@@ -119,28 +221,26 @@ fn main() {
                         // Find queue family that only supports compute
                         queue_family_ids.compute = device.queue_families()
                             .enumerate()
-                            .find(|(id, qf)| {
-                                score += 200;
-                                qf.supports_compute() && !qf.supports_graphics()
+                            .find(|(_, qf)| {
+                                qf.supports_compute() &&
+                                !qf.supports_graphics()
                             })
                             .map(|(id, _)| {
                                 id as u32
                             });
 
-                        // Find queue family that supports graphics
+                        // Find queue family that only supports graphics
                         // The graphics queue family also has to support presenting to the surface
                         queue_family_ids.graphics = device.queue_families()
                             .enumerate()
-                            .find(|(id, qf)| {
-                                score += 200;
-                                qf.supports_graphics() && surface.is_supported(*qf).unwrap_or(false)
+                            .find(|(_, qf)| {
+                                qf.supports_graphics() &&
+                                surface.is_supported(*qf).unwrap_or(false) &&
+                                !qf.supports_compute()
                             })
                             .map(|(id, _)| {
                                 id as u32
                             });
-
-                        // let queue_family_count = queue_family_ids.clone().count();
-                        // score += queue_family_count as u32 * 100;
 
                         println!("Queue families: {:?}", queue_family_ids);
 
@@ -174,20 +274,18 @@ fn main() {
 
         println!("Physical device chosen: {:?}\n", physical.name());
 
-        let mut queues = Vec::with_capacity(4);
+        let mut queues = Vec::with_capacity(physical.queue_families().len());
 
-        // Add a transfer queue if we have any
-        if let Some(id) = queue_family_ids.transfer {
-            queues.push((physical.queue_family_by_id(id).unwrap(), 0.5f32));
-        }
-        // Add a few graphics queues
-        if let Some(id) = queue_family_ids.graphics {
-            for _ in 0..1 {
-                queues.push((physical.queue_family_by_id(id).unwrap(), 1.0f32))
+        // TODO Implement support for using multiple queues
+        if let Some(id) = queue_family_ids.general {
+            let qf = physical.queue_family_by_id(id).unwrap();
+
+            for _ in 0..min(3, qf.queues_count()) {
+                queues.push((qf, 1.0f32));
             }
         }
 
-        println!("Queues to be created: {:?}", queues);
+        println!("Queues to be created: {:?}", queues.len());
 
         // TODO: Check for minimum required features
         let features = instance::Features::none();
@@ -202,15 +300,12 @@ fn main() {
         // Check if requirements are met
         assert_eq!(device_extensions, required_extensions);
 
-        let (device, qiter) = Device::new(physical, &features, &device_extensions, queues.iter().cloned()).expect("Failed to create logical device");
+        let (device, qiter) = Device::new(physical, &features, &device_extensions, queues).expect("Failed to create logical device");
 
-        println!("Queue Iter: {:?}", qiter);
-
-        (device, qiter, surface)
+        (device, qiter, surface, _callback)
     };
 
     let (mut swapchain, mut images) = {
-        use std::cmp::max;
         use vulkano::image::ImageUsage;
         use vulkano::swapchain::{Swapchain, CompositeAlpha, PresentMode};
 
@@ -252,7 +347,7 @@ fn main() {
         };
 
         // First available color space for our format
-        let color_space = capabilities.supported_formats[0].1;
+        //let color_space = capabilities.supported_formats[0].1;
 
         Swapchain::new(device.clone(),
                        surface.clone(),
@@ -270,10 +365,84 @@ fn main() {
             .expect("Failed to create swapchain")
     };
 
-    let mut swapchain_invalid = false;
-    let mut previous_frame_end = Box::new(now(device.clone())) as Box<GpuFuture>;
+    let vertex_buffer = {
+        #[derive(Debug, Clone)]
+        struct Vertex { position: [f32; 2] }
+        impl_vertex!(Vertex, position);
 
-    // We added graphics queues last so we know there is one
+        CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), [
+            Vertex { position: [-0.5, -0.25] },
+            Vertex { position: [0.0, 0.5] },
+            Vertex { position: [0.25, -0.1] }
+        ].iter().cloned()).expect("failed to create buffer")
+    };
+
+    mod vs {
+        #[derive(VulkanoShader)]
+        #[ty = "vertex"]
+        #[src = "
+        #version 450
+
+        layout(location = 0) in vec2 position;
+
+        void main() {
+            gl_Position = vec4(position, 0.0, 1.0);
+        }
+        "]
+            struct Dummy;
+    }
+
+    mod fs {
+        #[derive(VulkanoShader)]
+        #[ty = "fragment"]
+        #[src = "
+        #version 450
+
+        layout(location = 0) out vec4 f_color;
+
+        void main() {
+            f_color = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+        "]
+            struct Dummy;
+    }
+
+    let vs = vs::Shader::load(device.clone()).expect("failed to create shader module");
+    let fs = fs::Shader::load(device.clone()).expect("failed to create shader module");
+
+    let render_pass = Arc::new(single_pass_renderpass!(device.clone(),
+        attachments: {
+            // `color` is a custom name
+            color: {
+                load: Clear,
+                store: Store,
+                format: swapchain.format(),
+                samples: 1,
+            }
+        },
+        pass: {
+            color: [color],
+            depth_stencil: {}
+        }
+    ).unwrap());
+
+    let pipeline = Arc::new(GraphicsPipeline::start()
+        .vertex_input_single_buffer()
+        .vertex_shader(vs.main_entry_point(), ())
+        .triangle_list()
+        .viewports_dynamic_scissors_irrelevant(1)
+        .fragment_shader(fs.main_entry_point(), ())
+        .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+        .build(device.clone())
+        .unwrap());
+
+    let mut framebuffers: Option<Vec<Arc<vulkano::framebuffer::Framebuffer<_,_>>>> = None;
+
+    let mut swapchain_invalid = false;
+    let mut previous_frame_end = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
+
+    println!("Queue Iter: {:?}", qiter);
+    // This assumes the last queue supports graphics
     let present_queue = qiter.last().expect("Failed to get queue");
     println!("Queue: {:?}", present_queue);
 
@@ -296,6 +465,15 @@ fn main() {
             swapchain_invalid = false;
         }
 
+        if framebuffers.is_none() {
+            let new_framebuffers = Some(images.iter().map(|image| {
+                Arc::new(Framebuffer::start(render_pass.clone())
+                         .add(image.clone()).unwrap()
+                         .build().unwrap())
+            }).collect::<Vec<_>>());
+            std::mem::replace(&mut framebuffers, new_framebuffers);
+}
+
         let (image_number, acquired_future) = match swapchain::acquire_next_image(swapchain.clone(), None) {
             Ok(ret) => ret,
             // Can happen if the user has resized the window
@@ -307,7 +485,49 @@ fn main() {
             Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
         };
 
+        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), present_queue.family()).unwrap()
+        // Before we can draw, we have to *enter a render pass*. There are two methods to do
+        // this: `draw_inline` and `draw_secondary`. The latter is a bit more advanced and is
+        // not covered here.
+        //
+        // The third parameter builds the list of values to clear the attachments with. The API
+        // is similar to the list of attachments when building the framebuffers, except that
+        // only the attachments that use `load: Clear` appear in the list.
+        .begin_render_pass(framebuffers.as_ref().unwrap()[image_number].clone(), false,
+                           vec![[0.0, 0.0, 1.0, 1.0].into()])
+        .unwrap()
+
+        // We are now inside the first subpass of the render pass. We add a draw command.
+        //
+        // The last two parameters contain the list of resources to pass to the shaders.
+        // Since we used an `EmptyPipeline` object, the objects have to be `()`.
+        .draw(pipeline.clone(),
+              DynamicState {
+                  line_width: None,
+                  // TODO: Find a way to do this without having to dynamically allocate a Vec every frame.
+                  viewports: Some(vec![Viewport {
+                      origin: [0.0, 0.0],
+                      dimensions: [swapchain.dimensions()[0] as f32, swapchain.dimensions()[1] as f32],
+                      depth_range: 0.0 .. 1.0,
+                  }]),
+                  scissors: None,
+              },
+              vertex_buffer.clone(), (), ())
+        .unwrap()
+
+        // We leave the render pass by calling `draw_end`. Note that if we had multiple
+        // subpasses we could have called `next_inline` (or `next_secondary`) to jump to the
+        // next subpass.
+        .end_render_pass()
+        .unwrap()
+
+        // Finish building the command buffer by calling `build`.
+        .build()
+        .unwrap();
+
         let present_future = previous_frame_end.join(acquired_future)
+            .then_execute(present_queue.clone(), command_buffer)
+            .unwrap()
             .then_swapchain_present(present_queue.clone(), swapchain.clone(), image_number)
             .then_signal_fence_and_flush();
 
@@ -316,12 +536,12 @@ fn main() {
             Err(FlushError::OutOfDate) => {
                 println!("ERROR: Swapchain out of date");
                 swapchain_invalid = true;
-                previous_frame_end = Box::new(now(device.clone())) as Box<_>;
+                previous_frame_end = Box::new(sync::now(device.clone())) as Box<_>;
             },
             // Why can we continue here?
             Err(err) => {
                 println!("{:?}", err);
-                previous_frame_end = Box::new(now(device.clone())) as Box<_>;
+                previous_frame_end = Box::new(sync::now(device.clone())) as Box<_>;
             }
         }
 
@@ -342,7 +562,8 @@ fn main() {
             break 'gameloop;
         }
 
-        std::thread::sleep_ms(500);
+        // TODO Implement/enable vsync
+        std::thread::sleep(std::time::Duration::from_millis(16u64));
     }
 
 }
