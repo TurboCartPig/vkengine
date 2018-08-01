@@ -10,16 +10,16 @@ extern crate cocoa;
 #[cfg(target_os = "macos")]
 extern crate metal_rs as metal;
 
-use std::error;
-use std::fmt;
+use std::{error, fmt};
+use std::sync::Arc;
 #[cfg(target_os = "windows")]
 use std::ptr;
-use std::sync::Arc;
+#[cfg(target_os = "macos")]
+use std::mem;
 
 use vulkano::instance::Instance;
-use vulkano::instance::InstanceExtensions;
-use vulkano::swapchain::Surface;
-use vulkano::swapchain::SurfaceCreationError;
+use vulkano::swapchain::{Surface, SurfaceCreationError};
+
 use winit::{EventsLoop, WindowBuilder};
 use winit::CreationError as WindowCreationError;
 
@@ -32,29 +32,6 @@ use metal::*;
 #[cfg(target_os = "macos")]
 use objc::runtime::YES;
 
-#[cfg(target_os = "macos")]
-use std::mem;
-
-pub fn required_extensions() -> InstanceExtensions {
-    let ideal = InstanceExtensions {
-        khr_surface: true,
-        khr_xlib_surface: true,
-        khr_xcb_surface: true,
-        khr_wayland_surface: true,
-        khr_mir_surface: true,
-        khr_android_surface: true,
-        khr_win32_surface: true,
-        mvk_ios_surface: true,
-        mvk_macos_surface: true,
-        ..InstanceExtensions::none()
-    };
-
-    match InstanceExtensions::supported_by_core() {
-        Ok(supported) => supported.intersection(&ideal),
-        Err(_) => InstanceExtensions::none(),
-    }
-}
-
 pub trait VkSurfaceBuild {
     fn build_vk_surface(self, events_loop: &EventsLoop, instance: Arc<Instance>)
                         -> Result<Arc<Surface<winit::Window>>, CreationError>;
@@ -64,6 +41,7 @@ impl VkSurfaceBuild for WindowBuilder {
     fn build_vk_surface(self, events_loop: &EventsLoop, instance: Arc<Instance>)
                         -> Result<Arc<Surface<winit::Window>>, CreationError> {
         let window = self.build(events_loop)?;
+
         Ok(unsafe { winit_to_surface(instance, window) }?)
     }
 }

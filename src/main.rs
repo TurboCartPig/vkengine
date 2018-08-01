@@ -6,6 +6,7 @@ extern crate vulkano;
 extern crate vulkano_shader_derive;
 
 mod vulkano_win;
+mod shaders;
 
 use vulkano_win::VkSurfaceBuild;
 
@@ -276,7 +277,7 @@ fn main() {
 
         let mut queues = Vec::with_capacity(physical.queue_families().len());
 
-        // TODO Implement support for using multiple queues
+        // TODO Implement support for using multiple queue families
         if let Some(id) = queue_family_ids.general {
             let qf = physical.queue_family_by_id(id).unwrap();
 
@@ -365,50 +366,27 @@ fn main() {
             .expect("Failed to create swapchain")
     };
 
+    // The buffer contains a triangle
     let vertex_buffer = {
         #[derive(Debug, Clone)]
-        struct Vertex { position: [f32; 2] }
+        struct Vertex {
+            position: [f32; 2]
+        }
+
         impl_vertex!(Vertex, position);
 
         CpuAccessibleBuffer::from_iter(device.clone(), BufferUsage::all(), [
             Vertex { position: [-0.5, -0.25] },
             Vertex { position: [0.0, 0.5] },
             Vertex { position: [0.25, -0.1] }
-        ].iter().cloned()).expect("failed to create buffer")
+        ]
+        .iter()
+        .cloned())
+        .expect("failed to create buffer")
     };
 
-    mod vs {
-        #[derive(VulkanoShader)]
-        #[ty = "vertex"]
-        #[src = "
-        #version 450
-
-        layout(location = 0) in vec2 position;
-
-        void main() {
-            gl_Position = vec4(position, 0.0, 1.0);
-        }
-        "]
-            struct Dummy;
-    }
-
-    mod fs {
-        #[derive(VulkanoShader)]
-        #[ty = "fragment"]
-        #[src = "
-        #version 450
-
-        layout(location = 0) out vec4 f_color;
-
-        void main() {
-            f_color = vec4(1.0, 0.0, 0.0, 1.0);
-        }
-        "]
-            struct Dummy;
-    }
-
-    let vs = vs::Shader::load(device.clone()).expect("failed to create shader module");
-    let fs = fs::Shader::load(device.clone()).expect("failed to create shader module");
+    let vertex_shader = shaders::vertex::Shader::load(device.clone()).expect("Failed to create shader module");
+    let fragment_shader = shaders::fragment::Shader::load(device.clone()).expect("Failed to create shader module");
 
     let render_pass = Arc::new(single_pass_renderpass!(device.clone(),
         attachments: {
@@ -428,10 +406,10 @@ fn main() {
 
     let pipeline = Arc::new(GraphicsPipeline::start()
         .vertex_input_single_buffer()
-        .vertex_shader(vs.main_entry_point(), ())
+        .vertex_shader(vertex_shader.main_entry_point(), ())
         .triangle_list()
         .viewports_dynamic_scissors_irrelevant(1)
-        .fragment_shader(fs.main_entry_point(), ())
+        .fragment_shader(fragment_shader.main_entry_point(), ())
         .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
         .build(device.clone())
         .unwrap());
@@ -441,10 +419,11 @@ fn main() {
     let mut swapchain_invalid = false;
     let mut previous_frame_end = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
 
-    println!("Queue Iter: {:?}", qiter);
-    // This assumes the last queue supports graphics
+    println!("Queue Iter: {:?}\n", qiter);
+
+    // We assume all queues are general queues
+    //let graphics_queue = qiter.next().expect("Failed to ger queue");
     let present_queue = qiter.last().expect("Failed to get queue");
-    println!("Queue: {:?}", present_queue);
 
     'gameloop: loop {
         previous_frame_end.cleanup_finished();
@@ -486,44 +465,25 @@ fn main() {
         };
 
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), present_queue.family()).unwrap()
-        // Before we can draw, we have to *enter a render pass*. There are two methods to do
-        // this: `draw_inline` and `draw_secondary`. The latter is a bit more advanced and is
-        // not covered here.
-        //
-        // The third parameter builds the list of values to clear the attachments with. The API
-        // is similar to the list of attachments when building the framebuffers, except that
-        // only the attachments that use `load: Clear` appear in the list.
-        .begin_render_pass(framebuffers.as_ref().unwrap()[image_number].clone(), false,
-                           vec![[0.0, 0.0, 1.0, 1.0].into()])
-        .unwrap()
-
-        // We are now inside the first subpass of the render pass. We add a draw command.
-        //
-        // The last two parameters contain the list of resources to pass to the shaders.
-        // Since we used an `EmptyPipeline` object, the objects have to be `()`.
-        .draw(pipeline.clone(),
-              DynamicState {
-                  line_width: None,
-                  // TODO: Find a way to do this without having to dynamically allocate a Vec every frame.
-                  viewports: Some(vec![Viewport {
-                      origin: [0.0, 0.0],
-                      dimensions: [swapchain.dimensions()[0] as f32, swapchain.dimensions()[1] as f32],
-                      depth_range: 0.0 .. 1.0,
-                  }]),
-                  scissors: None,
-              },
-              vertex_buffer.clone(), (), ())
-        .unwrap()
-
-        // We leave the render pass by calling `draw_end`. Note that if we had multiple
-        // subpasses we could have called `next_inline` (or `next_secondary`) to jump to the
-        // next subpass.
-        .end_render_pass()
-        .unwrap()
-
-        // Finish building the command buffer by calling `build`.
-        .build()
-        .unwrap();
+            .begin_render_pass(framebuffers.as_ref().unwrap()[image_number].clone(), false, vec![[0.0, 0.0, 1.0, 1.0].into()])
+            .unwrap()
+                .draw(pipeline.clone(),
+                      DynamicState {
+                          line_width: None,
+                          // TODO: Find a way to do this without having to dynamically allocate a Vec every frame.
+                          viewports: Some(vec![Viewport {
+                              origin: [0.0, 0.0],
+                              dimensions: [swapchain.dimensions()[0] as f32, swapchain.dimensions()[1] as f32],
+                              depth_range: 0.0 .. 1.0,
+                          }]),
+                          scissors: None,
+                      },
+                      vertex_buffer.clone(), (), ())
+                .unwrap()
+            .end_render_pass()
+            .unwrap()
+            .build()
+            .unwrap();
 
         let present_future = previous_frame_end.join(acquired_future)
             .then_execute(present_queue.clone(), command_buffer)
