@@ -4,7 +4,10 @@ version = "0.1.0"
 authors = ["Dennis Kristiansen <dennkris@live.no>"]
 
 [dependencies]
-winit = "0.16"
+winit = "0.17"
 vulkano = "0.9"
 # vulkano-win = "0.9"
 vulkano-shader-derive = "*"
+#vulkano = { path = "../vulkano/vulkano" }
+#vulkano-shader-derive = { path = "../vulkano/vulkano-shader-derive" }
+#vulkano-win = { path = "../vulkano/vulkano-win" }
