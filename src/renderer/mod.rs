@@ -1,12 +1,12 @@
-mod vulkano_win;
 mod shaders;
 mod queues;
 
-use self::vulkano_win::VkSurfaceBuild;
 use self::queues::{QueueFamilyTypes, QueueFamilyIds};
 use self::shaders::ShaderSet;
 
 use winit::{Window, WindowBuilder, EventsLoop};
+
+use vulkano_win::VkSurfaceBuild;
 
 use vulkano::buffer::{CpuAccessibleBuffer, BufferUsage};
 use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
@@ -23,6 +23,10 @@ use vulkano::swapchain;
 use vulkano::swapchain::{AcquireError, SwapchainCreationError, Swapchain};
 use vulkano::image::SwapchainImage;
 use vulkano::format::Format;
+
+use vulkano_text::{DrawText, DrawTextTrait};
+
+use float_duration::FloatDuration;
 
 use std::cmp::{min, max};
 use std::mem;
@@ -41,10 +45,11 @@ pub struct Renderer {
     surface: Surface,
     swapchain: Arc<Swapchain<Window>>,
     images: Vec<Arc<SwapchainImage<Window>>>,
-    //framebuffers: Option<Vec<Arc<FramebufferAbstract + Send + Sync>>>,
     framebuffers: Option<Vec<Arc<Framebuffer<Arc<dyn RenderPassAbstract + Sync + Send>, ((), Arc<SwapchainImage<Window>>)>>>>,
     render_pass: Arc<RenderPassAbstract + Send + Sync>,
     graphics_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
+
+    draw_text: DrawText,
 
     dynamic_state: DynamicState,
     vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
@@ -56,8 +61,14 @@ impl Renderer {
     pub fn new(events_loop: &EventsLoop) -> Self {
         let instance = Self::new_instance();
 
+        // We regiser the debug callback early in case something happens during init
+        let _callback = Self::register_debug_callback(instance.clone());
+
+        //let monitor = events_loop.get_primary_monitor();
+
         let surface = WindowBuilder::new()
             .with_title("VK Engine")
+            //.with_fullscreen(Some(monitor))
             .build_vk_surface(events_loop, instance.clone())
             .unwrap();
 
@@ -73,9 +84,10 @@ impl Renderer {
 
         let graphics_pipeline = Self::build_graphics_pipeline(device.clone(), render_pass.clone(), &shaders);
 
+        let draw_text = DrawText::new(device.clone(), queues.present.clone(), swapchain.clone(), &images);
+
         let dynamic_state = DynamicState {
             line_width: None,
-            // TODO: Find a way to do this without having to dynamically allocate a Vec every frame.
             viewports: Some(vec![Viewport {
                 origin: [0.0, 0.0],
                 dimensions: [swapchain.dimensions()[0] as f32, swapchain.dimensions()[1] as f32],
@@ -98,11 +110,6 @@ impl Renderer {
             .expect("failed to create buffer")
         };
 
-        #[cfg(feature = "with-debuging")]
-        let _callback = register_debug_callback(&device.instance);
-        #[cfg(not(feature = "with-debugging"))]
-        let _callback = None;
-
         Self {
             device,
             queues,
@@ -113,6 +120,8 @@ impl Renderer {
             render_pass,
             graphics_pipeline,
 
+            draw_text,
+
             dynamic_state,
             vertex_buffer,
 
@@ -120,9 +129,11 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, mut previous_frame_end: Box<GpuFuture>) -> Box<GpuFuture> {
+    pub fn render(&mut self, mut previous_frame_end: Box<GpuFuture>, frame_time: FloatDuration) -> Box<GpuFuture> {
         previous_frame_end.cleanup_finished();
 
+        //TODO Can I move this to recreate_swapchain()?
+        // When the swapchain is recreated we need to recreate the framebuffers too
         if self.framebuffers.is_none() {
             let new_framebuffers = Some(self.images.iter().map(|image| {
                 Arc::new(Framebuffer::start(self.render_pass.clone())
@@ -133,6 +144,7 @@ impl Renderer {
             mem::replace(&mut self.framebuffers, new_framebuffers);
         }
 
+        // Acquire image to draw final frame to
         let (image_number, acquired_future) = match swapchain::acquire_next_image(self.swapchain.clone(), None) {
             Ok(ret) => ret,
             // Can happen if the user has resized the window
@@ -144,17 +156,23 @@ impl Renderer {
             Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
         };
 
+        // Set text to be drawn
+        let fps = 1f64/frame_time.as_seconds();
+        let fps_str = format!("FPS: {}", fps);
+        self.draw_text.queue_text(50f32, 100f32, 70f32, [1f32; 4], &fps_str);
+
         let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(self.device.clone(), self.queues.graphics.family()).unwrap()
             .begin_render_pass(self.framebuffers.as_ref().unwrap()[image_number].clone(), false, vec![[0.0, 0.0, 1.0, 1.0].into()])
             .unwrap()
                 .draw(self.graphics_pipeline.clone(),
-                      self.dynamic_state.clone(),
+                      &self.dynamic_state,
                       vec!(self.vertex_buffer.clone()),
                       (),
                       ())
                 .unwrap()
             .end_render_pass()
             .unwrap()
+            .draw_text(&mut self.draw_text, image_number)
             .build()
             .unwrap();
 
@@ -164,21 +182,19 @@ impl Renderer {
             .then_swapchain_present(self.queues.present.clone(), self.swapchain.clone(), image_number)
             .then_signal_fence_and_flush();
 
-        match present_future {
-            Ok(future) => previous_frame_end = Box::new(future) as Box<_>,
+        return match present_future {
+            Ok(future) => Box::new(future) as Box<_>,
             Err(FlushError::OutOfDate) => {
                 println!("ERROR: Swapchain out of date");
                 self.recreate_swapchain();
-                previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
+                Box::new(sync::now(self.device.clone())) as Box<_>
             },
             // Why can we continue here?
             Err(err) => {
                 println!("{:?}", err);
-                previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
+                Box::new(sync::now(self.device.clone())) as Box<_>
             }
-        }
-
-        previous_frame_end
+        };
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
@@ -197,6 +213,7 @@ impl Renderer {
         mem::replace(&mut self.swapchain, new_swapchain);
         mem::replace(&mut self.images, new_images);
 
+        println!("INFO: Swapchain recreated");
         Ok(())
     }
 
@@ -213,10 +230,6 @@ impl Renderer {
             println!("Debug callback from {}: {}", msg.layer_prefix, msg.description);
         })
         .ok()
-    }
-
-    fn remove_debug_callback(&mut self) {
-        self._callback = None;
     }
 
     fn new_instance() -> Arc<instance::Instance> {
@@ -259,7 +272,7 @@ impl Renderer {
 
         // FIXME Check for with-debugging feature
         let layers = {
-            let desired = [
+            let desired = vec![
                 //"VK_LAYER_LUNARG_api_dump",
                 //"VK_LAYER_LUNARG_core_validation",
                 //"VK_LAYER_LUNARG_device_simulation",
@@ -271,13 +284,13 @@ impl Renderer {
                 //"VK_LAYER_LUNARG_vktrace",
             ];
 
-            for dlayer in desired.clone().iter() {
+            for dlayer in desired.clone() {
                 let mut available = instance::layers_list().unwrap();
 
                 available.find(|alayer| {
-                    alayer.name() == *dlayer
+                    alayer.name() == dlayer
                 })
-                .expect("Failed to find validation layer");
+                .expect("Failed to find desired validation layer");
             }
 
             desired
@@ -285,7 +298,7 @@ impl Renderer {
 
         println!("Requested layers: {:?}\n", layers);
 
-        instance::Instance::new(Some(&info), &extensions, layers.iter()).unwrap()
+        instance::Instance::new(Some(&info), &extensions, layers).unwrap()
     }
 
     fn new_device_and_queues(instance: Arc<instance::Instance>, surface: Surface) -> (Arc<Device>, queues::Queues) {
@@ -494,9 +507,6 @@ impl Renderer {
             else {
                 capabilities.present_modes.iter().next().unwrap()
             };
-
-            // First available color space for our format
-            //let color_space = capabilities.supported_formats[0].1;
 
             Swapchain::new(device.clone(),
                            surface.clone(),

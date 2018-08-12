@@ -5,9 +5,15 @@ authors = ["Dennis Kristiansen <dennkris@live.no>"]
 
 [dependencies]
 winit = "0.17"
-vulkano = "0.9"
-# vulkano-win = "0.9"
-vulkano-shader-derive = "*"
+vulkano = "0.10"
+vulkano-win = "0.10"
+vulkano-shader-derive = "0.10"
 #vulkano = { path = "../vulkano/vulkano" }
 #vulkano-shader-derive = { path = "../vulkano/vulkano-shader-derive" }
 #vulkano-win = { path = "../vulkano/vulkano-win" }
+vulkano_text = "*"
+float_duration = "*"
+nalgebra = "*"
+#ncollide3d = "*"
+nphysics3d = "*"
+#glft = "*"
