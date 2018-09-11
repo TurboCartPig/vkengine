@@ -1,5 +1,5 @@
+use vulkano::device::Queue;
 use vulkano::instance::QueueFamiliesIter;
-use vulkano::device::{Queue};
 
 use std::sync::Arc;
 
@@ -21,7 +21,6 @@ pub enum QueueFamilyTypes {
     Compute,
     Graphics,
     Present,
-    None,
 }
 
 #[derive(Debug, Clone)]
@@ -47,16 +46,16 @@ impl QueueFamilyIds {
 
         // We assume all queue families support transfers
         for qf in iter {
-            if qf.supports_compute() && qf.supports_graphics() && surface.is_supported(qf).unwrap_or(false) {
+            if qf.supports_compute()
+                && qf.supports_graphics()
+                && surface.is_supported(qf).unwrap_or(false)
+            {
                 ids.general = Some(qf.id());
-            }
-            else if qf.supports_compute() {
+            } else if qf.supports_compute() {
                 ids.compute = Some(qf.id());
-            }
-            else if qf.supports_graphics() && surface.is_supported(qf).unwrap_or(false) {
+            } else if qf.supports_graphics() && surface.is_supported(qf).unwrap_or(false) {
                 ids.graphics = Some(qf.id());
-            }
-            else if surface.is_supported(qf).unwrap_or(false) {
+            } else if surface.is_supported(qf).unwrap_or(false) {
                 ids.present = Some(qf.id());
             }
         }

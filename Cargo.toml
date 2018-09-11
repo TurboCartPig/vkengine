@@ -11,9 +11,11 @@ vulkano-shader-derive = "0.10"
 #vulkano = { path = "../vulkano/vulkano" }
 #vulkano-shader-derive = { path = "../vulkano/vulkano-shader-derive" }
 #vulkano-win = { path = "../vulkano/vulkano-win" }
-vulkano_text = "*"
 float_duration = "*"
 nalgebra = "*"
 #ncollide3d = "*"
-nphysics3d = "*"
+#nphysics3d = "*"
 #glft = "*"
+genmesh = "0.6.2"
+specs = "0.12"
+specs-derive = "0.2"
