@@ -1,0 +1,8 @@
+merge_imports = true
+reorder_imports = true
+reorder_modules = true
+reorder_impl_items = true
+
+# Unstable options
+#report_todo = "Unnumbered"
+#report_fixme = "Unnumbered"
