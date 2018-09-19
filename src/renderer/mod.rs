@@ -9,9 +9,11 @@ use self::{
     queues::{QueueFamilyIds, QueueFamilyTypes},
     shaders::ShaderSet,
 };
-use components::Transform;
 use components::DeltaTime;
-use na::{Perspective3, Matrix4, Translation3, Rotation3, UnitQuaternion, Point3, Vector3, Isometry3};
+use components::Transform;
+use na::{
+    Isometry3, Matrix4, Perspective3, Point3, Rotation3, Translation3, UnitQuaternion, Vector3,
+};
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
@@ -217,7 +219,11 @@ impl Renderer {
 }
 
 impl<'a> System<'a> for Renderer {
-    type SystemData = (ReadStorage<'a, MeshComponent>, ReadStorage<'a, Transform>, Read<'a, DeltaTime>);
+    type SystemData = (
+        ReadStorage<'a, MeshComponent>,
+        ReadStorage<'a, Transform>,
+        Read<'a, DeltaTime>,
+    );
 
     fn run(&mut self, (mesh, transform, delta_time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
@@ -247,14 +253,18 @@ impl<'a> System<'a> for Renderer {
                 //let model = Matrix4::new_nonuniform_scaling(&transform.scale)
                 //    .append_translation(&transform.position);
                 let mut model = Isometry3::identity();
-                
+
                 model.append_translation_mut(&Translation3::from_vector(transform.position));
 
-                model.append_rotation_wrt_center_mut(&UnitQuaternion::from_euler_angles({1.0 * delta_time.first_frame as f32},
-                                                                                        {1.0 * delta_time.first_frame as f32},
-                                                                                        {1.0 * delta_time.first_frame as f32}));
+                model.append_rotation_wrt_center_mut(&UnitQuaternion::from_euler_angles(
+                    { 1.0 * delta_time.first_frame as f32 },
+                    { 1.0 * delta_time.first_frame as f32 },
+                    { 1.0 * delta_time.first_frame as f32 },
+                ));
 
-                let model = model.to_homogeneous().prepend_nonuniform_scaling(&transform.scale);
+                let model = model
+                    .to_homogeneous()
+                    .prepend_nonuniform_scaling(&transform.scale);
 
                 let uniform_data = shaders::vertex::ty::Data {
                     // TODO What is world? I assume it is the same thing I call model
@@ -314,12 +324,12 @@ impl<'a> System<'a> for Renderer {
             let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
                 self.queues.graphics.family(),
-                ).unwrap()
-                .begin_render_pass(
-                    self.framebuffers.as_ref().unwrap()[image_number].clone(),
-                    true, // This makes it so that I can execute secondary command buffers
-                    vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
-                ).unwrap();
+            ).unwrap()
+            .begin_render_pass(
+                self.framebuffers.as_ref().unwrap()[image_number].clone(),
+                true, // This makes it so that I can execute secondary command buffers
+                vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
+            ).unwrap();
 
             unsafe {
                 // Execute all the secondary command buffers
@@ -328,11 +338,7 @@ impl<'a> System<'a> for Renderer {
                 }
             }
 
-            command_buffer
-                .end_render_pass()
-                .unwrap()
-                .build()
-                .unwrap()
+            command_buffer.end_render_pass().unwrap().build().unwrap()
         };
 
         let present_future = previous_frame_end
