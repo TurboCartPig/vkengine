@@ -1,18 +1,19 @@
 use genmesh::{
-    generators::{Cube, IndexedPolygon, Plane, SharedVertex, SphereUv},
-    EmitTriangles, MapToVertices, MapVertex, Quad, Triangle, Triangulate, Vertex as GenMeshVertex,
-    Vertices,
+    generators::{
+        Circle, Cone, Cube, Cylinder, IcoSphere, IndexedPolygon, Plane, SharedVertex, SphereUv,
+        Torus,
+    },
+    EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
 };
-use na::{Matrix4, Rotation3, Translation3, Vector3};
 use renderer::Vertex;
-use specs::prelude::*;
+use specs::DenseVecStorage;
 use std::{fmt::Debug, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     device::Device,
 };
 
-#[derive(Component, Debug)]
+#[derive(Component)]
 pub struct MeshComponent {
     pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     pub index_buffer: Arc<CpuAccessibleBuffer<[u16]>>,
@@ -20,6 +21,7 @@ pub struct MeshComponent {
 
 /// Primitive shapes
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum Shape {
     /// Sphere, number of points around the equator, number of points pole to pole
     Sphere(usize, usize),
@@ -47,8 +49,39 @@ impl ShapedMeshBuilder {
         let (vertex_buffer, index_buffer) = {
             let (vertex_data, index_data) = match shape {
                 Shape::Sphere(u, v) => generate_vi(SphereUv::new(u, v)),
+                Shape::Cone(u) => generate_vi(Cone::new(u)),
                 Shape::Cube => generate_vi(Cube::new()),
-                _ => unreachable!(),
+                Shape::Cylinder(u, h) => {
+                    if let Some(h) = h {
+                        generate_vi(Cylinder::subdivide(u, h))
+                    } else {
+                        generate_vi(Cylinder::new(u))
+                    }
+                }
+                Shape::Torus(radius, tubular_radius, redial_segments, tubular_segments) => {
+                    generate_vi(Torus::new(
+                        radius,
+                        tubular_radius,
+                        redial_segments,
+                        tubular_segments,
+                    ))
+                }
+                Shape::IcoSphere(subdivisions) => {
+                    if let Some(subdivisions) = subdivisions {
+                        generate_vi(IcoSphere::subdivide(subdivisions))
+                    } else {
+                        generate_vi(IcoSphere::new())
+                    }
+                }
+                Shape::Plane(subdivisions) => {
+                    if let Some((x, y)) = subdivisions {
+                        generate_vi(Plane::subdivide(x, y))
+                    } else {
+                        generate_vi(Plane::new())
+                    }
+                }
+                Shape::Circle(u) => generate_vi(Circle::new(u)),
+                //_ => unreachable!(),
             };
 
             let vertex_buffer = CpuAccessibleBuffer::from_iter(
@@ -74,6 +107,7 @@ impl ShapedMeshBuilder {
 }
 
 // Generates vertecies based on shape generate
+#[allow(dead_code)]
 fn generate_v<F, P, G>(generator: G) -> Vec<Vertex>
 where
     F: EmitTriangles<Vertex = GenMeshVertex>,
@@ -142,7 +176,18 @@ where
         .map(|v| Vertex {
             position: v.pos.into(),
             normal: v.normal.into(),
-        }).collect::<Vec<_>>();
+        })
+        // This pushes the model into z in order for the center of the model to be origin of the
+        // model space
+        .map(|Vertex { position: [x, y, z], normal }| {
+            Vertex {
+                position: [x, y, z + 1.0],
+                normal: normal,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    println!("Shared Vertecies: {:?}", shared_vertecies);
 
     (shared_vertecies, new_indexed_polygons)
 }

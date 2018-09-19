@@ -3,38 +3,39 @@ pub mod geometry;
 mod queues;
 mod shaders;
 
-use self::camera::Camera;
-use self::geometry::{MeshComponent, Shape, ShapedMeshBuilder};
-use self::queues::{QueueFamilyIds, QueueFamilyTypes};
-use self::shaders::ShaderSet;
-use components::Transform;
-use float_duration::FloatDuration;
-use na::{Perspective3, Rotation3, Translation3};
-use specs::prelude::*;
-use std::cell::RefCell;
-use std::cmp::{max, min};
-use std::mem;
-use std::sync::{Arc, RwLock};
-use std::thread::sleep;
-use std::time::Duration;
-use vulkano::buffer::{cpu_pool::CpuBufferPool, BufferUsage};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
-use vulkano::descriptor::descriptor_set::{
-    FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool, PersistentDescriptorSet,
+use self::{
+    camera::Camera,
+    geometry::MeshComponent,
+    queues::{QueueFamilyIds, QueueFamilyTypes},
+    shaders::ShaderSet,
 };
-use vulkano::device::Device;
-use vulkano::format::Format;
-use vulkano::framebuffer::{Framebuffer, RenderPassAbstract, Subpass};
-use vulkano::image::{attachment::AttachmentImage, SwapchainImage};
-use vulkano::instance;
-use vulkano::instance::debug::{DebugCallback, MessageTypes};
-use vulkano::instance::{DeviceExtensions, InstanceExtensions, PhysicalDevice, PhysicalDeviceType};
-use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
-use vulkano::swapchain;
-use vulkano::swapchain::{AcquireError, Swapchain, SwapchainCreationError};
-use vulkano::sync;
-use vulkano::sync::{FlushError, GpuFuture};
+use components::Transform;
+use components::DeltaTime;
+use na::{Perspective3, Matrix4, Translation3, Rotation3, UnitQuaternion, Point3, Vector3, Isometry3};
+use specs::prelude::*;
+use std::{
+    cmp::{max, min},
+    mem,
+    sync::Arc,
+    sync::RwLock,
+};
+use vulkano::{
+    buffer::{cpu_pool::CpuBufferPool, BufferUsage},
+    command_buffer::{AutoCommandBufferBuilder, DynamicState},
+    descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
+    device::Device,
+    format::Format,
+    framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
+    image::{attachment::AttachmentImage, SwapchainImage},
+    instance::{
+        self,
+        debug::{DebugCallback, MessageTypes},
+        DeviceExtensions, InstanceExtensions, PhysicalDevice, PhysicalDeviceType,
+    },
+    pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
+    swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
+    sync::{self, FlushError, GpuFuture},
+};
 use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
 
@@ -44,11 +45,6 @@ pub type Surface = Arc<swapchain::Surface<Window>>;
 pub struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
-}
-
-struct Frame {
-    image_number: usize,
-    acquired_future: Box<GpuFuture>,
 }
 
 impl_vertex!(Vertex, position, normal);
@@ -76,8 +72,8 @@ pub struct Renderer {
     uniform_buffer_pool: CpuBufferPool<shaders::vertex::ty::Data>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
     camera: Camera<Perspective3<f32>>,
-    previous_frame_end: Box<GpuFuture>,
-    _callback: Option<DebugCallback>,
+    previous_frame_end: Box<GpuFuture + Send + Sync>,
+    //_callback: Option<DebugCallback>,
 }
 
 impl Renderer {
@@ -85,13 +81,15 @@ impl Renderer {
         let instance = new_instance();
 
         // We regiser the debug callback early in case something happens during init
-        let _callback = register_debug_callback(instance.clone());
+        //let _callback = register_debug_callback(instance.clone());
 
         //let monitor = events_loop.get_primary_monitor();
 
         let surface = WindowBuilder::new()
             .with_title("VK Engine")
+            //.with_maximized(true)
             //.with_fullscreen(Some(monitor))
+            //.with_dimensions()
             .build_vk_surface(events_loop, instance.clone())
             .unwrap();
 
@@ -153,8 +151,15 @@ impl Renderer {
             descriptor_set_pool,
             camera,
             previous_frame_end,
-            _callback,
+            //_callback,
         }
+    }
+
+    // FIXME This is a workaround needed because the projection matrix gets the wrong aspect ratio
+    // at init
+    pub fn init(&mut self) {
+        self.recreate_swapchain().unwrap();
+        self.recreate_framebuffers();
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
@@ -212,9 +217,9 @@ impl Renderer {
 }
 
 impl<'a> System<'a> for Renderer {
-    type SystemData = (ReadStorage<'a, MeshComponent>, ReadStorage<'a, Transform>);
+    type SystemData = (ReadStorage<'a, MeshComponent>, ReadStorage<'a, Transform>, Read<'a, DeltaTime>);
 
-    fn run(&mut self, (mesh, transform): Self::SystemData) {
+    fn run(&mut self, (mesh, transform, delta_time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
@@ -229,25 +234,27 @@ impl<'a> System<'a> for Renderer {
                 // Can happen if the user has resized the window
                 Err(AcquireError::OutOfDate) => {
                     println!("ERROR: Swapchain out of date");
-                    self.recreate_swapchain();
+                    self.recreate_swapchain().unwrap();
                     return;
                 }
                 Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
             };
 
-        let mut secondary_command_buffers = Vec::with_capacity(2usize);
+        let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
 
         for (mesh, transform) in (&mesh, &transform).join() {
             let uniform_buffer_subbuffer = {
-                use na::Matrix4;
+                //let model = Matrix4::new_nonuniform_scaling(&transform.scale)
+                //    .append_translation(&transform.position);
+                let mut model = Isometry3::identity();
+                
+                model.append_translation_mut(&Translation3::from_vector(transform.position));
 
-                //let model = self.cube.translation.to_homogeneous() * self.cube.rotation.to_homogeneous() * self.cube.scale;
-                let model = Translation3::from_vector(transform.position).to_homogeneous()
-                    * Rotation3::from_euler_angles(
-                        transform.rotation.0,
-                        transform.rotation.1,
-                        transform.rotation.2,
-                    ).to_homogeneous();
+                model.append_rotation_wrt_center_mut(&UnitQuaternion::from_euler_angles({1.0 * delta_time.first_frame as f32},
+                                                                                        {1.0 * delta_time.first_frame as f32},
+                                                                                        {1.0 * delta_time.first_frame as f32}));
+
+                let model = model.to_homogeneous().prepend_nonuniform_scaling(&transform.scale);
 
                 let uniform_data = shaders::vertex::ty::Data {
                     // TODO What is world? I assume it is the same thing I call model
@@ -260,6 +267,7 @@ impl<'a> System<'a> for Renderer {
                 self.uniform_buffer_pool.next(uniform_data).unwrap()
             };
 
+            // FIXME Make persistant descriptor sets and put them on the MeshComponent
             let descriptor_set = self
                 .descriptor_set_pool
                 .next()
@@ -285,39 +293,46 @@ impl<'a> System<'a> for Renderer {
                 .build()
                 .unwrap();
 
-            secondary_command_buffers.push(secondary_command_buffer);
+            {
+                let mut scbg = secondary_command_buffers.write().unwrap();
+                scbg.push(secondary_command_buffer);
+            }
         }
 
-        println!(
-            "Command buffers buildt: {}",
-            secondary_command_buffers.len()
-        );
-
+        // FIXME This seems like a hack and not the proper way to do this
+        // Swap the GpuFuture out of the Renderer
         let mut previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
         mem::swap(&mut previous_frame_end, &mut self.previous_frame_end);
+
+        let secondary_command_buffers = secondary_command_buffers.into_inner().unwrap();
 
         if secondary_command_buffers.len() == 0 {
             return;
         }
 
-        let command_buffer = unsafe {
-            AutoCommandBufferBuilder::primary_one_time_submit(
+        let command_buffer = {
+            let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
                 self.queues.graphics.family(),
-            ).unwrap()
-            .begin_render_pass(
-                self.framebuffers.as_ref().unwrap()[image_number].clone(),
-                false,
-                vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
-            ).unwrap()
-            // FIXME How do I add all the command buffers?
-            // FIXME Trows errors about illigal inlined commands in subpass
-            .execute_commands(secondary_command_buffers.pop().unwrap())
-            .unwrap()
-            .end_render_pass()
-            .unwrap()
-            .build()
-            .unwrap()
+                ).unwrap()
+                .begin_render_pass(
+                    self.framebuffers.as_ref().unwrap()[image_number].clone(),
+                    true, // This makes it so that I can execute secondary command buffers
+                    vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
+                ).unwrap();
+
+            unsafe {
+                // Execute all the secondary command buffers
+                for scb in secondary_command_buffers {
+                    command_buffer = command_buffer.execute_commands(scb).unwrap();
+                }
+            }
+
+            command_buffer
+                .end_render_pass()
+                .unwrap()
+                .build()
+                .unwrap()
         };
 
         let present_future = previous_frame_end
@@ -334,7 +349,7 @@ impl<'a> System<'a> for Renderer {
             Ok(future) => Box::new(future) as Box<_>,
             Err(FlushError::OutOfDate) => {
                 println!("ERROR: Swapchain out of date");
-                self.recreate_swapchain();
+                self.recreate_swapchain().unwrap();
                 Box::new(sync::now(self.device.clone())) as Box<_>
             }
             Err(err) => {
@@ -342,9 +357,19 @@ impl<'a> System<'a> for Renderer {
                 Box::new(sync::now(self.device.clone())) as Box<_>
             }
         };
+
+        // Store the GpuFuture in Renderer again
+        mem::replace(&mut self.previous_frame_end, previous_frame_end);
+    }
+
+    fn setup(&mut self, res: &mut Resources) {
+        Self::SystemData::setup(res);
+
+        self.init();
     }
 }
 
+#[allow(dead_code)]
 fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCallback> {
     let message_types = MessageTypes {
         error: true,
@@ -536,7 +561,10 @@ fn new_device_and_queues(
     println!("Queue types to be created: {:?}", queue_types);
 
     // TODO: Check for minimum required features
-    let features = instance::Features::none();
+    let features = instance::Features {
+        fill_mode_non_solid: true,
+        ..instance::Features::none()
+    };
 
     let required_extensions = DeviceExtensions {
         khr_swapchain: true,
@@ -600,9 +628,11 @@ fn new_swapchain_and_images(
     surface: Surface,
     queues: &queues::Queues,
 ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
-    use vulkano::image::ImageUsage;
-    use vulkano::swapchain::{CompositeAlpha, PresentMode, Swapchain};
-    use vulkano::sync::SharingMode;
+    use vulkano::{
+        image::ImageUsage,
+        swapchain::{CompositeAlpha, PresentMode, Swapchain},
+        sync::SharingMode,
+    };
 
     let capabilities = surface
         .capabilities(device.physical_device())
@@ -620,8 +650,9 @@ fn new_swapchain_and_images(
     // First available format
     let format = capabilities.supported_formats[0].0;
 
-    // Current extent seems to be maximized window normaly
-    let dimensions = capabilities.current_extent.unwrap_or([1280, 720]);
+    // Current extent seems to be the screen res normaly
+    // FIXME The dimensions dont match the inner window size
+    let dimensions = capabilities.current_extent.unwrap_or([1600, 900]);
 
     // We will only use this image for color
     let image_usage = ImageUsage {
@@ -723,9 +754,9 @@ fn build_graphics_pipeline(
     let pipeline = Arc::new(
         GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
-            //.vertex_input::<TwoBuffersDefinition<Vertex, u16>>(TwoBuffersDefinition::new())
             .vertex_shader(shaders.vertex.main_entry_point(), ())
             .triangle_list()
+            //.polygon_mode_line()
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(shaders.fragment.main_entry_point(), ())
             .depth_stencil_simple_depth()

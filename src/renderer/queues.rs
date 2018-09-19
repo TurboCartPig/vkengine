@@ -1,5 +1,4 @@
-use vulkano::device::Queue;
-use vulkano::instance::QueueFamiliesIter;
+use vulkano::{device::Queue, instance::QueueFamiliesIter};
 
 use std::sync::Arc;
 
