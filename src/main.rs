@@ -4,7 +4,6 @@ extern crate vulkano;
 extern crate vulkano_win;
 #[macro_use]
 extern crate vulkano_shader_derive;
-extern crate alga;
 extern crate float_duration;
 extern crate genmesh;
 extern crate nalgebra as na;

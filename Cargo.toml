@@ -14,7 +14,7 @@ vulkano-shader-derive = "0.10"
 
 float_duration = "0.3"
 
-alga = "0.7"
+#alga = "0.7"
 nalgebra = "0.16"
 #ncollide3d = "*"
 #nphysics3d = "*"
