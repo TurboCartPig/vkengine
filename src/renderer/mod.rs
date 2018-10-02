@@ -343,7 +343,7 @@ impl<'a> System<'a> for Renderer {
 
         let present_future = previous_frame_end
             .join(acquired_future)
-            .then_execute(self.queues.graphics.clone(), command_buffer)
+            .then_execute(self.queues.present.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
                 self.queues.present.clone(),
@@ -459,7 +459,7 @@ fn new_instance() -> Arc<instance::Instance> {
 
     println!("Requested layers: {:?}\n", layers);
 
-    instance::Instance::new(Some(&info), &extensions, layers).unwrap()
+    instance::Instance::new(Some(&info), &extensions, layers).expect("Failed to create vulkan instance")
 }
 
 fn new_device_and_queues(
