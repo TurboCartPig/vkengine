@@ -12,10 +12,11 @@ layout(set = 0, binding = 0) uniform Data {
 } uniforms;
 
 void main() {
-    mat4 worldview = uniforms.model * uniforms.view;
-    v_normal = transpose(inverse(mat3(uniforms.view))) * normal;
-
-    mat4 space = uniforms.proj * worldview;
+    //mat4 worldview = uniforms.model * uniforms.view;
+    //v_normal = transpose(inverse(mat3(uniforms.view))) * normal;
+    //mat4 space = uniforms.proj * worldview;
+    mat4 space = uniforms.proj * uniforms.view * uniforms.model;
+    v_normal = normal;
 
     gl_Position = space * vec4(position, 1.0);
 }

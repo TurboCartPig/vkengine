@@ -24,3 +24,7 @@ genmesh = "0.6.2"
 
 specs = "0.12"
 specs-derive = "0.2"
+
+[dependencies.shred]
+version = "*"
+features = ["nightly"]

@@ -88,13 +88,15 @@ impl ShapedMeshBuilder {
                 device.clone(),
                 BufferUsage::all(),
                 vertex_data.iter().cloned(),
-            ).expect("Failed to create vertex buffer");
+            )
+            .expect("Failed to create vertex buffer");
 
             let index_buffer = CpuAccessibleBuffer::from_iter(
                 device.clone(),
                 BufferUsage::all(),
                 index_data.iter().cloned(),
-            ).expect("Failed to create index buffer");
+            )
+            .expect("Failed to create index buffer");
 
             (vertex_buffer, index_buffer)
         };
@@ -127,7 +129,8 @@ where
 
                 (vertex, u)
             })
-        }).vertices()
+        })
+        .vertices()
         // Turn GenMeshVertex into renderer::Vertex
         .map(|(v, u)| {
             let vertex = Vertex {
@@ -179,12 +182,17 @@ where
         })
         // This pushes the model into z in order for the center of the model to be origin of the
         // model space
-        .map(|Vertex { position: [x, y, z], normal }| {
-            Vertex {
-                position: [x, y, z + 1.0],
-                normal: normal,
-            }
-        })
+        /*.map(
+            |Vertex {
+                 position: [x, y, z],
+                 normal,
+             }| {
+                Vertex {
+                    position: [x, y, z + 1.0],
+                    normal: normal,
+                }
+            },
+        )*/
         .collect::<Vec<_>>();
 
     println!("Shared Vertecies: {:?}", shared_vertecies);

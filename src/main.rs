@@ -16,16 +16,19 @@ mod renderer;
 mod systems;
 
 use self::{
-    components::{DeltaTime, ShouldClose, Transform},
+    components::{DeltaTime, ShouldClose, Transform, Keyboard},
     renderer::{
+        camera::Camera,
         geometry::{Shape, ShapedMeshBuilder},
         Renderer,
     },
-    systems::{PrintSystem, TimeSystem},
+    systems::{PrintSystem, TimeSystem, TransformSystem},
 };
 use na::Vector3;
 use specs::prelude::*;
 use winit::EventsLoop;
+use winit::VirtualKeyCode;
+use winit::ElementState;
 
 //TODO Use a logger instead of println
 //TODO Mesh loading
@@ -43,9 +46,9 @@ impl EventsLoopSystem {
 }
 
 impl<'a> System<'a> for EventsLoopSystem {
-    type SystemData = Write<'a, ShouldClose>;
+    type SystemData = (Write<'a, ShouldClose>, Write<'a, Keyboard>);
 
-    fn run(&mut self, mut should_close: Self::SystemData) {
+    fn run(&mut self, (mut should_close, mut keyboard): Self::SystemData) {
         // Event handeling
         self.events_loop.poll_events(|event| {
             use winit::{
@@ -63,6 +66,16 @@ impl<'a> System<'a> for EventsLoopSystem {
                     event: DeviceEvent::Key(KeyboardInput { scancode: 0x10, .. }),
                     ..
                 } => should_close.0 = true,
+                Device {
+                    event: DeviceEvent::Key(KeyboardInput { virtual_keycode: Some(code), state: state, .. }),
+                    ..
+                } => {
+                    let pressed = match state {
+                        ElementState::Pressed => true,
+                        ElementState::Released => false,
+                    };
+                    keyboard.pressed.insert(code, pressed);
+                }
                 _ => (),
             }
         });
@@ -83,37 +96,53 @@ fn main() {
     // Register components
     world.register::<Transform>();
     world.register::<renderer::geometry::MeshComponent>();
+    world.register::<Camera>();
 
     // Add resources
     world.add_resource(DeltaTime::default());
     world.add_resource(ShouldClose::default());
+    world.add_resource(Keyboard::default());
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
     let t = Transform {
         position: Vector3::new(0.0, 0.0, -3.0),
-        rotation: (0.0, 90.0, 0.0),
+        rotation: (0.0, 3.14/4.0, 0.0),
         scale: Vector3::new(1.0, 1.0, 1.0),
     };
+
+    // Plane
     world
         .create_entity()
         .with(t)
         .with(ShapedMeshBuilder::new(
             renderer.device.clone(),
             Shape::Plane(None),
-        )).build();
+        ))
+        .build();
+
+    // Cube
     world
         .create_entity()
         .with(Transform {
             position: Vector3::new(2.0, 0.0, -5.0),
             ..Transform::default()
-        }).with(ShapedMeshBuilder::new(renderer.device.clone(), Shape::Cube))
+        })
+        .with(ShapedMeshBuilder::new(renderer.device.clone(), Shape::Cube))
+        .build();
+
+    // Camera
+    world
+        .create_entity()
+        .with(Transform::default())
+        .with(Camera::default())
         .build();
 
     // Create dispatcher
     let mut dispatcher = DispatcherBuilder::new()
         //.with(PrintSystem, "print", &[])
         .with(TimeSystem::default(), "time", &[])
+        .with(TransformSystem, "transform", &["time"])
         .with(renderer, "renderer", &["time"])
         .with_barrier()
         .with_thread_local(events_loop_system)

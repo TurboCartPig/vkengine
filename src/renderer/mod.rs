@@ -1,4 +1,4 @@
-mod camera;
+pub mod camera;
 pub mod geometry;
 mod queues;
 mod shaders;
@@ -73,7 +73,6 @@ pub struct Renderer {
     depth_buffer: Arc<AttachmentImage>,
     uniform_buffer_pool: CpuBufferPool<shaders::vertex::ty::Data>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
-    camera: Camera<Perspective3<f32>>,
     previous_frame_end: Box<GpuFuture + Send + Sync>,
     //_callback: Option<DebugCallback>,
 }
@@ -122,11 +121,6 @@ impl Renderer {
             scissors: None,
         };
 
-        let camera = Camera::<Perspective3<f32>>::new(
-            { swapchain.dimensions()[0] / swapchain.dimensions()[1] } as f32,
-            { 3.14 / 2.0 } as f32,
-        );
-
         let uniform_buffer_pool =
             CpuBufferPool::<shaders::vertex::ty::Data>::new(device.clone(), BufferUsage::all());
 
@@ -151,17 +145,9 @@ impl Renderer {
             depth_buffer,
             uniform_buffer_pool,
             descriptor_set_pool,
-            camera,
             previous_frame_end,
             //_callback,
         }
-    }
-
-    // FIXME This is a workaround needed because the projection matrix gets the wrong aspect ratio
-    // at init
-    pub fn init(&mut self) {
-        self.recreate_swapchain().unwrap();
-        self.recreate_framebuffers();
     }
 
     fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
@@ -185,8 +171,6 @@ impl Renderer {
             dimensions: dimensions,
             depth_range: 0.0..1.0,
         }]);
-
-        self.camera.update_aspect(dimensions[0] / dimensions[1]);
 
         mem::replace(&mut self.swapchain, new_swapchain);
         mem::replace(&mut self.images, new_images);
@@ -222,10 +206,11 @@ impl<'a> System<'a> for Renderer {
     type SystemData = (
         ReadStorage<'a, MeshComponent>,
         ReadStorage<'a, Transform>,
+        WriteStorage<'a, Camera>,
         Read<'a, DeltaTime>,
     );
 
-    fn run(&mut self, (mesh, transform, delta_time): Self::SystemData) {
+    fn run(&mut self, (mesh, transform, mut camera, delta_time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
@@ -246,31 +231,21 @@ impl<'a> System<'a> for Renderer {
                 Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
             };
 
+        // Camera
+        let (camera, camera_t) = (&mut camera, &transform).join().next().unwrap();
+        let dimensions = self.swapchain.dimensions();
+        camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
+        let view = camera_t.as_matrix();
+
         let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
 
         for (mesh, transform) in (&mesh, &transform).join() {
             let uniform_buffer_subbuffer = {
-                //let model = Matrix4::new_nonuniform_scaling(&transform.scale)
-                //    .append_translation(&transform.position);
-                let mut model = Isometry3::identity();
-
-                model.append_translation_mut(&Translation3::from_vector(transform.position));
-
-                model.append_rotation_wrt_center_mut(&UnitQuaternion::from_euler_angles(
-                    { 1.0 * delta_time.first_frame as f32 },
-                    { 1.0 * delta_time.first_frame as f32 },
-                    { 1.0 * delta_time.first_frame as f32 },
-                ));
-
-                let model = model
-                    .to_homogeneous()
-                    .prepend_nonuniform_scaling(&transform.scale);
+                let model = transform.as_matrix();
 
                 let uniform_data = shaders::vertex::ty::Data {
-                    // TODO What is world? I assume it is the same thing I call model
-                    //world: Matrix4::identity().into(),
-                    view: (self.camera.view * self.camera.scale).into(),
-                    proj: self.camera.projection.unwrap().into(),
+                    view: view.into(),
+                    proj: camera.projection.unwrap().into(),
                     model: model.into(),
                 };
 
@@ -370,8 +345,6 @@ impl<'a> System<'a> for Renderer {
 
     fn setup(&mut self, res: &mut Resources) {
         Self::SystemData::setup(res);
-
-        self.init();
     }
 }
 

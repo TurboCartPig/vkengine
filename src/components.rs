@@ -1,5 +1,7 @@
-use na::Vector3;
+use std::collections::HashMap;
+use na::{Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
 use specs::prelude::*;
+use winit::VirtualKeyCode;
 
 #[derive(Component, Debug)]
 #[storage(VecStorage)]
@@ -14,6 +16,26 @@ pub struct Transform {
     pub scale: Vector3<f32>,
 }
 
+impl Transform {
+    pub fn as_matrix(&self) -> Matrix4<f32> {
+        let mut matrix = Isometry3::identity();
+
+        matrix.append_translation_mut(&Translation3::from_vector(self.position));
+
+        matrix.append_rotation_wrt_center_mut(&UnitQuaternion::from_euler_angles(
+            self.rotation.0,
+            self.rotation.1,
+            self.rotation.2,
+        ));
+
+        let matrix = matrix
+            .to_homogeneous()
+            .prepend_nonuniform_scaling(&self.scale);
+
+        matrix
+    }
+}
+
 impl Default for Transform {
     fn default() -> Self {
         Transform {
@@ -24,7 +46,27 @@ impl Default for Transform {
     }
 }
 
-#[derive(Component)]
+pub struct Keyboard {
+    pub pressed: HashMap<VirtualKeyCode, bool>,
+}
+
+impl Keyboard {
+    pub fn pressed(&self, key: VirtualKeyCode) -> bool {
+        match self.pressed.get(&key) {
+            Some(true) => true,
+            _ => false
+        }
+    }
+}
+
+impl Default for Keyboard {
+    fn default() -> Self {
+        Self {
+            pressed: HashMap::new(),
+        }
+    }
+}
+
 pub struct DeltaTime {
     pub delta: f64,
     pub first_frame: f64,
