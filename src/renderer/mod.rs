@@ -9,17 +9,12 @@ use self::{
     queues::{QueueFamilyIds, QueueFamilyTypes},
     shaders::ShaderSet,
 };
-use components::DeltaTime;
-use components::Transform;
-use na::{
-    Isometry3, Matrix4, Perspective3, Point3, Rotation3, Translation3, UnitQuaternion, Vector3,
-};
+use components::{DeltaTime, Transform};
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
     mem,
-    sync::Arc,
-    sync::RwLock,
+    sync::{Arc, RwLock},
 };
 use vulkano::{
     buffer::{cpu_pool::CpuBufferPool, BufferUsage},
@@ -195,7 +190,8 @@ impl Renderer {
                             .build()
                             .unwrap(),
                     )
-                }).collect::<Vec<_>>(),
+                })
+                .collect::<Vec<_>>(),
         );
 
         mem::replace(&mut self.framebuffers, new_framebuffers);
@@ -210,7 +206,7 @@ impl<'a> System<'a> for Renderer {
         Read<'a, DeltaTime>,
     );
 
-    fn run(&mut self, (mesh, transform, mut camera, delta_time): Self::SystemData) {
+    fn run(&mut self, (mesh, transform, mut camera, _delta_time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
@@ -266,7 +262,8 @@ impl<'a> System<'a> for Renderer {
                     self.device.clone(),
                     self.queues.graphics.family(),
                     Subpass::from(self.render_pass.clone(), 0).unwrap(),
-                ).unwrap()
+                )
+                .unwrap()
                 .draw_indexed(
                     self.graphics_pipeline.clone(),
                     &self.dynamic_state,
@@ -274,7 +271,8 @@ impl<'a> System<'a> for Renderer {
                     mesh.index_buffer.clone(),
                     descriptor_set,
                     (),
-                ).unwrap()
+                )
+                .unwrap()
                 .build()
                 .unwrap();
 
@@ -299,12 +297,14 @@ impl<'a> System<'a> for Renderer {
             let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
                 self.queues.graphics.family(),
-            ).unwrap()
+            )
+            .unwrap()
             .begin_render_pass(
                 self.framebuffers.as_ref().unwrap()[image_number].clone(),
                 true, // This makes it so that I can execute secondary command buffers
                 vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
-            ).unwrap();
+            )
+            .unwrap();
 
             unsafe {
                 // Execute all the secondary command buffers
@@ -324,7 +324,8 @@ impl<'a> System<'a> for Renderer {
                 self.queues.present.clone(),
                 self.swapchain.clone(),
                 image_number,
-            ).then_signal_fence_and_flush();
+            )
+            .then_signal_fence_and_flush();
 
         previous_frame_end = match present_future {
             Ok(future) => Box::new(future) as Box<_>,
@@ -363,7 +364,8 @@ fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCal
             "Debug callback from {}: {}",
             msg.layer_prefix, msg.description
         );
-    }).ok()
+    })
+    .ok()
 }
 
 fn new_instance() -> Arc<instance::Instance> {
@@ -432,7 +434,8 @@ fn new_instance() -> Arc<instance::Instance> {
 
     println!("Requested layers: {:?}\n", layers);
 
-    instance::Instance::new(Some(&info), &extensions, layers).expect("Failed to create vulkan instance")
+    instance::Instance::new(Some(&info), &extensions, layers)
+        .expect("Failed to create vulkan instance")
 }
 
 fn new_device_and_queues(
@@ -472,7 +475,8 @@ fn new_device_and_queues(
                 );
 
                 (device, score, queue_family_ids)
-            }).inspect(|(device, score, _)| {
+            })
+            .inspect(|(device, score, _)| {
                 println!(
                     "\
                      Device name: {}\n\
@@ -484,7 +488,8 @@ fn new_device_and_queues(
                     device.api_version(),
                     score
                 );
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         // Sort them by score (Highest score last)
         devices.sort_by(|(_, a, _), (_, b, _)| a.cmp(&b));
@@ -687,7 +692,8 @@ fn new_swapchain_and_images(
         present_mode,
         true,
         None,
-    ).expect("Failed to create swapchain")
+    )
+    .expect("Failed to create swapchain")
 }
 
 fn load_shaders(device: Arc<Device>) -> ShaderSet {
@@ -721,7 +727,8 @@ fn build_render_pass(device: Arc<Device>, format: Format) -> Arc<RenderPassAbstr
                 color: [color],
                 depth_stencil: {depth}
             }
-        ).unwrap(),
+        )
+        .unwrap(),
     )
 }
 

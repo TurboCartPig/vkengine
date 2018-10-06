@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use na::{Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
 use specs::prelude::*;
+use std::collections::HashMap;
 use winit::VirtualKeyCode;
 
 #[derive(Component, Debug)]
@@ -54,7 +54,7 @@ impl Keyboard {
     pub fn pressed(&self, key: VirtualKeyCode) -> bool {
         match self.pressed.get(&key) {
             Some(true) => true,
-            _ => false
+            _ => false,
         }
     }
 }

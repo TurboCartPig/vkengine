@@ -16,19 +16,17 @@ mod renderer;
 mod systems;
 
 use self::{
-    components::{DeltaTime, ShouldClose, Transform, Keyboard},
+    components::{DeltaTime, Keyboard, ShouldClose, Transform},
     renderer::{
         camera::Camera,
         geometry::{Shape, ShapedMeshBuilder},
         Renderer,
     },
-    systems::{PrintSystem, TimeSystem, TransformSystem},
+    systems::{TimeSystem, TransformSystem},
 };
 use na::Vector3;
 use specs::prelude::*;
-use winit::EventsLoop;
-use winit::VirtualKeyCode;
-use winit::ElementState;
+use winit::{ElementState, EventsLoop};
 
 //TODO Use a logger instead of println
 //TODO Mesh loading
@@ -67,7 +65,12 @@ impl<'a> System<'a> for EventsLoopSystem {
                     ..
                 } => should_close.0 = true,
                 Device {
-                    event: DeviceEvent::Key(KeyboardInput { virtual_keycode: Some(code), state: state, .. }),
+                    event:
+                        DeviceEvent::Key(KeyboardInput {
+                            virtual_keycode: Some(code),
+                            state,
+                            ..
+                        }),
                     ..
                 } => {
                     let pressed = match state {
@@ -107,7 +110,7 @@ fn main() {
     world.create_entity().with(Transform::default()).build();
     let t = Transform {
         position: Vector3::new(0.0, 0.0, -3.0),
-        rotation: (0.0, 3.14/4.0, 0.0),
+        rotation: (0.0, 3.14 / 4.0, 0.0),
         scale: Vector3::new(1.0, 1.0, 1.0),
     };
 

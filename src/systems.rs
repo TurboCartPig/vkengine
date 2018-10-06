@@ -1,12 +1,10 @@
-use components::{DeltaTime, Transform, Keyboard};
-use renderer::camera::Camera;
+use components::{DeltaTime, Keyboard, Transform};
 use float_duration::TimePoint;
-use na::Vector3;
-use na::Rotation3;
-use na::Unit;
+use na::{Rotation3, Vector3};
+use renderer::camera::Camera;
 use specs::prelude::*;
-use winit::VirtualKeyCode;
 use std::{mem, time::Instant};
+use winit::VirtualKeyCode;
 
 pub struct TimeSystem {
     first_frame: Instant,
@@ -41,24 +39,35 @@ impl<'a> System<'a> for TimeSystem {
 pub struct TransformSystem;
 
 impl<'a> System<'a> for TransformSystem {
-    type SystemData = (Read<'a, Keyboard>,
-                       Read<'a, DeltaTime>,
-                       ReadStorage<'a, Camera>,
-                       WriteStorage<'a, Transform>);
+    type SystemData = (
+        Read<'a, Keyboard>,
+        Read<'a, DeltaTime>,
+        ReadStorage<'a, Camera>,
+        WriteStorage<'a, Transform>,
+    );
 
     fn run(&mut self, (keyboard, delta_time, camera, mut transform): Self::SystemData) {
         let (_, camera_t) = (&camera, &mut transform).join().next().unwrap();
 
         if keyboard.pressed(VirtualKeyCode::W) {
-            camera_t.position = Vector3::new(camera_t.position.x, camera_t.position.y, camera_t.position.z + 1.0 * delta_time.delta as f32);
+            camera_t.position = Vector3::new(
+                camera_t.position.x,
+                camera_t.position.y,
+                camera_t.position.z + 1.0 * delta_time.delta as f32,
+            );
         }
-        
-        let forward = Rotation3::from_euler_angles(camera_t.rotation.0, camera_t.rotation.1, camera_t.rotation.2).scaled_axis();
-        println!("Forward: {:?}", forward);
 
+        let forward = Rotation3::from_euler_angles(
+            camera_t.rotation.0,
+            camera_t.rotation.1,
+            camera_t.rotation.2,
+        )
+        .scaled_axis();
+        println!("Forward: {:?}", forward);
     }
 }
 
+#[allow(dead_code)]
 pub struct PrintSystem;
 
 impl<'a> System<'a> for PrintSystem {
