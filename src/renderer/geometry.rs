@@ -7,20 +7,17 @@ use genmesh::{
 };
 use renderer::Vertex;
 use specs::DenseVecStorage;
-use std::{fmt::Debug, sync::Arc};
+use std::{
+    fmt::Debug,
+    sync::Arc,
+};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     device::Device,
 };
 
-#[derive(Component)]
-pub struct MeshComponent {
-    pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    pub index_buffer: Arc<CpuAccessibleBuffer<[u16]>>,
-}
-
 /// Primitive shapes
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum Shape {
     /// Sphere, number of points around the equator, number of points pole to pole
@@ -42,24 +39,29 @@ pub enum Shape {
     Circle(usize),
 }
 
-pub struct ShapedMeshBuilder {}
+/// Generic mesh component
+#[derive(Component)]
+pub struct MeshComponent {
+    pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    // pub index_buffer: Arc<CpuAccessibleBuffer<[u16]>>,
+}
 
-impl ShapedMeshBuilder {
-    pub fn new(device: Arc<Device>, shape: Shape) -> MeshComponent {
-        let (vertex_buffer, index_buffer) = {
-            let (vertex_data, index_data) = match shape {
-                Shape::Sphere(u, v) => generate_vi(SphereUv::new(u, v)),
-                Shape::Cone(u) => generate_vi(Cone::new(u)),
-                Shape::Cube => generate_vi(Cube::new()),
+impl MeshComponent {
+    pub fn from_shape(device: Arc<Device>, shape: Shape) -> Self {
+        let vertex_buffer = {
+            let vertex_data = match shape {
+                Shape::Sphere(u, v) => generate_v(SphereUv::new(u, v)),
+                Shape::Cone(u) => generate_v(Cone::new(u)),
+                Shape::Cube => generate_v(Cube::new()),
                 Shape::Cylinder(u, h) => {
                     if let Some(h) = h {
-                        generate_vi(Cylinder::subdivide(u, h))
+                        generate_v(Cylinder::subdivide(u, h))
                     } else {
-                        generate_vi(Cylinder::new(u))
+                        generate_v(Cylinder::new(u))
                     }
                 }
                 Shape::Torus(radius, tubular_radius, redial_segments, tubular_segments) => {
-                    generate_vi(Torus::new(
+                    generate_v(Torus::new(
                         radius,
                         tubular_radius,
                         redial_segments,
@@ -68,20 +70,19 @@ impl ShapedMeshBuilder {
                 }
                 Shape::IcoSphere(subdivisions) => {
                     if let Some(subdivisions) = subdivisions {
-                        generate_vi(IcoSphere::subdivide(subdivisions))
+                        generate_v(IcoSphere::subdivide(subdivisions))
                     } else {
-                        generate_vi(IcoSphere::new())
+                        generate_v(IcoSphere::new())
                     }
                 }
                 Shape::Plane(subdivisions) => {
                     if let Some((x, y)) = subdivisions {
-                        generate_vi(Plane::subdivide(x, y))
+                        generate_v(Plane::subdivide(x, y))
                     } else {
-                        generate_vi(Plane::new())
+                        generate_v(Plane::new())
                     }
                 }
-                Shape::Circle(u) => generate_vi(Circle::new(u)),
-                //_ => unreachable!(),
+                Shape::Circle(u) => generate_v(Circle::new(u)),
             };
 
             let vertex_buffer = CpuAccessibleBuffer::from_iter(
@@ -91,19 +92,11 @@ impl ShapedMeshBuilder {
             )
             .expect("Failed to create vertex buffer");
 
-            let index_buffer = CpuAccessibleBuffer::from_iter(
-                device.clone(),
-                BufferUsage::all(),
-                index_data.iter().cloned(),
-            )
-            .expect("Failed to create index buffer");
-
-            (vertex_buffer, index_buffer)
+            vertex_buffer
         };
 
-        MeshComponent {
+        Self {
             vertex_buffer,
-            index_buffer,
         }
     }
 }
@@ -118,6 +111,7 @@ where
     G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
 {
     let vertices: Vec<_> = generator.shared_vertex_iter().collect();
+    println!("Shared vertices: {:?}", vertices.len());
 
     let vertices: Vec<_> = generator
         .indexed_polygon_iter()
@@ -144,11 +138,13 @@ where
         .map(|(v, _)| v)
         .collect();
 
+    println!("Shared vertices: {:?}", vertices.len());
     vertices
 }
 
 // FIXME This requires optimization
 // Generates vertecies and indecies based on shape generator
+#[allow(dead_code)]
 fn generate_vi<F, P, G>(generator: G) -> (Vec<Vertex>, Vec<u16>)
 where
     F: EmitTriangles<Vertex = GenMeshVertex>,
@@ -156,46 +152,33 @@ where
     P: EmitTriangles<Vertex = usize>,
     G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
 {
-    let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
+     let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
 
-    let indexed_polygons = generator
-        .indexed_polygon_iter()
-        .triangulate()
-        // .vertecies() might do what I want
-        .map(|Triangle { x, y, z }| [x, y, z])
-        .collect::<Vec<_>>();
+     let indexed_polygons = generator
+         .indexed_polygon_iter()
+         .triangulate()
+         // .vertecies() might do what I want
+         .map(|Triangle { x, y, z }| (x, y, z))
+         .collect::<Vec<_>>();
 
-    let mut new_indexed_polygons = Vec::with_capacity(indexed_polygons.len());
+     let mut indecies = Vec::with_capacity(indexed_polygons.len());
 
-    // FIXME Find a differnt way to turn Vec<[u16; 3]> into Vec<u16>
-    for [x, y, z] in indexed_polygons {
-        new_indexed_polygons.push(x as u16);
-        new_indexed_polygons.push(y as u16);
-        new_indexed_polygons.push(z as u16);
-    }
+     // FIXME Find a differnt way to turn Vec<[u16; 3]> into Vec<u16>
+     for (x, y, z) in indexed_polygons {
+         indecies.push(x as u16);
+         indecies.push(y as u16);
+         indecies.push(z as u16);
+     }
 
-    let shared_vertecies = shared_vertecies
-        .iter()
-        .map(|v| Vertex {
-            position: v.pos.into(),
-            normal: v.normal.into(),
-        })
-        // This pushes the model into z in order for the center of the model to be origin of the
-        // model space
-        /*.map(
-            |Vertex {
-                 position: [x, y, z],
-                 normal,
-             }| {
-                Vertex {
-                    position: [x, y, z + 1.0],
-                    normal: normal,
-                }
-            },
-        )*/
-        .collect::<Vec<_>>();
+     let shared_vertecies = shared_vertecies
+         .iter()
+         .map(|v| Vertex {
+             position: v.pos.into(),
+             normal: v.normal.into(),
+         })
+         .collect::<Vec<_>>();
 
-    println!("Shared Vertecies: {:?}", shared_vertecies);
+     // println!("Shared Vertecies: {:?}", shared_vertecies);
 
-    (shared_vertecies, new_indexed_polygons)
+     (shared_vertecies, indecies)
 }

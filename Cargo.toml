@@ -20,11 +20,7 @@ nalgebra = "0.16"
 #nphysics3d = "*"
 
 #glft = "*"
-genmesh = "0.6.2"
+genmesh = "0.6"
 
 specs = "0.12"
 specs-derive = "0.2"
-
-[dependencies.shred]
-version = "*"
-features = ["nightly"]

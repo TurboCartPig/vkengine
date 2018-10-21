@@ -1,6 +1,5 @@
-use na::{Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
+use na::{Matrix4, UnitQuaternion, Vector3};
 use specs::prelude::*;
-use std::collections::HashMap;
 use winit::VirtualKeyCode;
 
 #[derive(Component, Debug)]
@@ -9,30 +8,46 @@ pub struct Transform {
     // Offset from origin
     pub position: Vector3<f32>,
     // Roll, pitch, yaw
-    pub rotation: (f32, f32, f32),
-    // Vector rotation
-    //pub rotation: Vector<f32>,
+    pub rotation: UnitQuaternion<f32>,
     // Nonuniform scale
     pub scale: Vector3<f32>,
 }
 
 impl Transform {
     pub fn as_matrix(&self) -> Matrix4<f32> {
-        let mut matrix = Isometry3::identity();
+        // let mut matrix = Isometry3::identity();
+        
+        // matrix.append_rotation_mut(&self.rotation);
 
-        matrix.append_translation_mut(&Translation3::from_vector(self.position));
+        // matrix.append_translation_mut(&Translation3::from_vector(self.position));
+        
+        // let matrix = matrix
+        //     .to_homogeneous()
+        //     .prepend_nonuniform_scaling(&self.scale);
 
-        matrix.append_rotation_wrt_center_mut(&UnitQuaternion::from_euler_angles(
-            self.rotation.0,
-            self.rotation.1,
-            self.rotation.2,
-        ));
+        // matrix
+        
+        Matrix4::new_nonuniform_scaling(&self.scale) * Matrix4::new_rotation(self.rotation.scaled_axis()) * Matrix4::new_translation(&self.position)
+    }
 
-        let matrix = matrix
-            .to_homogeneous()
-            .prepend_nonuniform_scaling(&self.scale);
+    pub fn translate(&mut self, t: Vector3<f32>) {
+        self.position += self.rotation * t;
+    }
 
-        matrix
+    pub fn translate_forward(&mut self, s: f32) {
+        self.translate(Vector3::new(0.0, 0.0, s))
+    }
+
+    pub fn translate_right(&mut self, s: f32) {
+        self.translate(Vector3::new(-s, 0.0, 0.0))
+    }
+
+    pub fn rotate_global(&mut self, r: UnitQuaternion<f32>) {
+        self.rotation = r * self.rotation;
+    }
+
+    pub fn rotate_local(&mut self, r: UnitQuaternion<f32>) {
+        self.rotation = self.rotation * r;
     }
 }
 
@@ -40,29 +55,54 @@ impl Default for Transform {
     fn default() -> Self {
         Transform {
             position: Vector3::new(0.0, 0.0, 0.0),
-            rotation: (0.0, 0.0, 0.0),
+            rotation: UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
             scale: Vector3::new(1.0, 1.0, 1.0),
         }
     }
 }
 
+// TODO Use scancodes instead of virtual key codes
+// 170 is the number of variants as of winit 0.17.2
 pub struct Keyboard {
-    pub pressed: HashMap<VirtualKeyCode, bool>,
+    pressed: [bool; 170],
 }
 
 impl Keyboard {
+    pub fn release(&mut self, key: VirtualKeyCode) {
+        self.pressed[key as usize] = false;
+    }
+
+    pub fn press(&mut self, key: VirtualKeyCode) {
+        self.pressed[key as usize] = true;
+    }
+
     pub fn pressed(&self, key: VirtualKeyCode) -> bool {
-        match self.pressed.get(&key) {
-            Some(true) => true,
-            _ => false,
-        }
+        self.pressed[key as usize]
     }
 }
 
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
-            pressed: HashMap::new(),
+            pressed: [false; 170],
+        }
+    }
+}
+
+// TODO Add Mouse buttons
+// TODO Consider moving grabbed
+pub struct Mouse {
+    pub move_delta: (f64, f64),
+    pub scroll_delta: (f32, f32),
+    pub grabbed: bool,
+}
+
+impl Default for Mouse {
+    fn default() -> Self {
+        Self {
+            move_delta: (0.0, 0.0),
+            scroll_delta: (0.0, 0.0),
+            grabbed: true,
         }
     }
 }

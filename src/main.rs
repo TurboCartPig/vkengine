@@ -16,69 +16,90 @@ mod renderer;
 mod systems;
 
 use self::{
-    components::{DeltaTime, Keyboard, ShouldClose, Transform},
+    components::{DeltaTime, Keyboard, Mouse, ShouldClose, Transform},
     renderer::{
         camera::Camera,
-        geometry::{Shape, ShapedMeshBuilder},
+        geometry::{Shape, MeshComponent},
         Renderer,
+        Surface,
     },
     systems::{TimeSystem, TransformSystem},
 };
-use na::Vector3;
+use na::{UnitQuaternion, Vector3};
 use specs::prelude::*;
-use winit::{ElementState, EventsLoop};
+use winit::EventsLoop;
 
 //TODO Use a logger instead of println
 //TODO Mesh loading
 //TODO Use glyph-brush insted of vulkano_text
 //TODO Fix/Impl lighting
+//TODO Fix all tranformations and matrix math
+//TODO Add ActiveCamera as Component with NullStorage
 
 struct EventsLoopSystem {
     events_loop: EventsLoop,
+    surface: Surface,
 }
 
 impl EventsLoopSystem {
-    pub fn new(events_loop: EventsLoop) -> Self {
-        EventsLoopSystem { events_loop }
+    pub fn new(events_loop: EventsLoop, surface: Surface) -> Self {
+        EventsLoopSystem { events_loop, surface }
     }
 }
 
 impl<'a> System<'a> for EventsLoopSystem {
-    type SystemData = (Write<'a, ShouldClose>, Write<'a, Keyboard>);
+    type SystemData = (
+        Write<'a, ShouldClose>,
+        Write<'a, Keyboard>,
+        Write<'a, Mouse>,
+    );
 
-    fn run(&mut self, (mut should_close, mut keyboard): Self::SystemData) {
+    fn run(&mut self, (mut should_close, mut keyboard, mut mouse): Self::SystemData) {
+        let window = self.surface.window();
         // Event handeling
         self.events_loop.poll_events(|event| {
             use winit::{
-                DeviceEvent,
-                Event::{DeviceEvent as Device, WindowEvent as Window},
-                KeyboardInput, WindowEvent,
+                DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, MouseScrollDelta,
+                WindowEvent,
             };
 
             match event {
-                Window {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => should_close.0 = true,
-                Device {
-                    event: DeviceEvent::Key(KeyboardInput { scancode: 0x10, .. }),
-                    ..
-                } => should_close.0 = true,
-                Device {
-                    event:
-                        DeviceEvent::Key(KeyboardInput {
-                            virtual_keycode: Some(code),
-                            state,
-                            ..
-                        }),
-                    ..
-                } => {
-                    let pressed = match state {
-                        ElementState::Pressed => true,
-                        ElementState::Released => false,
-                    };
-                    keyboard.pressed.insert(code, pressed);
-                }
+                Event::WindowEvent {
+                    window_id: _,
+                    event,
+                } => match event {
+                    WindowEvent::CloseRequested => should_close.0 = true,
+                    WindowEvent::Destroyed => should_close.0 = true,
+                    WindowEvent::Focused(grabbed) => {
+                        mouse.grabbed = grabbed;
+                        window.grab_cursor(grabbed).unwrap();
+                        window.hide_cursor(grabbed);
+                    }
+                    _ => (),
+                },
+                Event::DeviceEvent {
+                    device_id: _,
+                    event,
+                } => match event {
+                    DeviceEvent::MouseMotion { delta } => {
+                        mouse.move_delta.0 += delta.0;
+                        mouse.move_delta.1 += delta.1;
+                    }
+                    DeviceEvent::MouseWheel {
+                        delta: MouseScrollDelta::LineDelta(x, y),
+                    } => mouse.scroll_delta = (x, y),
+                    DeviceEvent::Key(KeyboardInput {
+                        state,
+                        virtual_keycode: Some(key),
+                        ..
+                    }) => {
+                        match state {
+                            ElementState::Pressed => keyboard.press(key),
+                            ElementState::Released => keyboard.release(key),
+                        };
+                    }
+                    _ => (),
+                },
                 _ => (),
             }
         });
@@ -91,7 +112,7 @@ fn main() {
 
     let events_loop = EventsLoop::new();
     let renderer = Renderer::new(&events_loop);
-    let events_loop_system = EventsLoopSystem::new(events_loop);
+    let events_loop_system = EventsLoopSystem::new(events_loop, renderer.surface());
 
     // ECS World
     let mut world = World::new();
@@ -110,7 +131,7 @@ fn main() {
     world.create_entity().with(Transform::default()).build();
     let t = Transform {
         position: Vector3::new(0.0, 0.0, -3.0),
-        rotation: (0.0, 3.14 / 4.0, 0.0),
+        rotation: UnitQuaternion::from_euler_angles(0.0, 3.14 / 4.0, 0.0),
         scale: Vector3::new(1.0, 1.0, 1.0),
     };
 
@@ -118,7 +139,7 @@ fn main() {
     world
         .create_entity()
         .with(t)
-        .with(ShapedMeshBuilder::new(
+        .with(MeshComponent::from_shape(
             renderer.device.clone(),
             Shape::Plane(None),
         ))
@@ -131,13 +152,13 @@ fn main() {
             position: Vector3::new(2.0, 0.0, -5.0),
             ..Transform::default()
         })
-        .with(ShapedMeshBuilder::new(renderer.device.clone(), Shape::Cube))
+        .with(MeshComponent::from_shape(renderer.device.clone(), Shape::Cube))
         .build();
 
     // Camera
     world
         .create_entity()
-        .with(Transform::default())
+        .with(Transform { rotation: UnitQuaternion::look_at_rh(&Vector3::new(0.0, 0.0, -1.0), &Vector3::new(0.0, -1.0, 0.0)), ..Transform::default() })
         .with(Camera::default())
         .build();
 

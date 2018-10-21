@@ -1,6 +1,6 @@
-use components::{DeltaTime, Keyboard, Transform};
+use components::{DeltaTime, Keyboard, Mouse, Transform};
 use float_duration::TimePoint;
-use na::{Rotation3, Vector3};
+use na::{Vector3, UnitQuaternion};
 use renderer::camera::Camera;
 use specs::prelude::*;
 use std::{mem, time::Instant};
@@ -41,29 +41,41 @@ pub struct TransformSystem;
 impl<'a> System<'a> for TransformSystem {
     type SystemData = (
         Read<'a, Keyboard>,
+        Write<'a, Mouse>,
         Read<'a, DeltaTime>,
         ReadStorage<'a, Camera>,
         WriteStorage<'a, Transform>,
     );
 
-    fn run(&mut self, (keyboard, delta_time, camera, mut transform): Self::SystemData) {
+    fn run(&mut self, (keyboard, mut mouse, delta_time, camera, mut transform): Self::SystemData) {
+        // If mouse is not grabbed, then the window is not focused, and we sould not handle input
+        if !mouse.grabbed { return; }
+        
         let (_, camera_t) = (&camera, &mut transform).join().next().unwrap();
 
         if keyboard.pressed(VirtualKeyCode::W) {
-            camera_t.position = Vector3::new(
-                camera_t.position.x,
-                camera_t.position.y,
-                camera_t.position.z + 1.0 * delta_time.delta as f32,
-            );
+            camera_t.translate_forward(1.0 * delta_time.delta as f32);
         }
 
-        let forward = Rotation3::from_euler_angles(
-            camera_t.rotation.0,
-            camera_t.rotation.1,
-            camera_t.rotation.2,
-        )
-        .scaled_axis();
-        println!("Forward: {:?}", forward);
+        if keyboard.pressed(VirtualKeyCode::S) {
+            camera_t.translate_forward(-1.0 * delta_time.delta as f32);
+        }
+
+        if keyboard.pressed(VirtualKeyCode::A) {
+            camera_t.translate_right(-1.0 * delta_time.delta as f32);
+        }
+
+        if keyboard.pressed(VirtualKeyCode::D) {
+            camera_t.translate_right(1.0 * delta_time.delta as f32);
+        }
+
+        let (yaw, pitch) = mouse.move_delta;
+        let (yaw, pitch) = (yaw as f32 * -0.001, pitch as f32 * 0.001);
+
+        camera_t.rotate_global(UnitQuaternion::from_axis_angle(&Vector3::x_axis(), pitch));
+        camera_t.rotate_local(UnitQuaternion::from_axis_angle(&Vector3::y_axis(), yaw));
+
+        *mouse = Mouse::default();
     }
 }
 

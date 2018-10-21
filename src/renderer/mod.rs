@@ -38,7 +38,7 @@ use winit::{EventsLoop, Window, WindowBuilder};
 
 pub type Surface = Arc<swapchain::Surface<Window>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
@@ -145,6 +145,10 @@ impl Renderer {
         }
     }
 
+    pub fn surface(&self) -> Surface {
+        self.surface.clone()
+    }
+
     fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
         let dimensions = self
             .surface
@@ -241,7 +245,7 @@ impl<'a> System<'a> for Renderer {
 
                 let uniform_data = shaders::vertex::ty::Data {
                     view: view.into(),
-                    proj: camera.projection.unwrap().into(),
+                    proj: camera.projection(),
                     model: model.into(),
                 };
 
@@ -264,11 +268,10 @@ impl<'a> System<'a> for Renderer {
                     Subpass::from(self.render_pass.clone(), 0).unwrap(),
                 )
                 .unwrap()
-                .draw_indexed(
+                .draw(
                     self.graphics_pipeline.clone(),
                     &self.dynamic_state,
                     vec![mesh.vertex_buffer.clone()],
-                    mesh.index_buffer.clone(),
                     descriptor_set,
                     (),
                 )
