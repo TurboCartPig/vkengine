@@ -1,8 +1,8 @@
-use resources::{DeltaTime, Keyboard, Mouse};
 use components::Transform;
 use float_duration::TimePoint;
-use na::{Vector3, UnitQuaternion};
+use na::{UnitQuaternion, Vector3};
 use renderer::camera::Camera;
+use resources::{DeltaTime, Keyboard, Mouse};
 use specs::prelude::*;
 use std::{mem, time::Instant};
 use winit::VirtualKeyCode;
@@ -50,8 +50,10 @@ impl<'a> System<'a> for TransformSystem {
 
     fn run(&mut self, (keyboard, mut mouse, delta_time, camera, mut transform): Self::SystemData) {
         // If mouse is not grabbed, then the window is not focused, and we sould not handle input
-        if !mouse.grabbed { return; }
-        
+        if !mouse.grabbed {
+            return;
+        }
+
         let (_, camera_t) = (&camera, &mut transform).join().next().unwrap();
 
         if keyboard.pressed(VirtualKeyCode::W) {

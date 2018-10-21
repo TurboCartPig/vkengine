@@ -15,18 +15,20 @@ pub struct Transform {
 impl Transform {
     pub fn as_matrix(&self) -> Matrix4<f32> {
         // let mut matrix = Isometry3::identity();
-        
+
         // matrix.append_rotation_mut(&self.rotation);
 
         // matrix.append_translation_mut(&Translation3::from_vector(self.position));
-        
+
         // let matrix = matrix
         //     .to_homogeneous()
         //     .prepend_nonuniform_scaling(&self.scale);
 
         // matrix
-        
-        Matrix4::new_nonuniform_scaling(&self.scale) * Matrix4::new_rotation(self.rotation.scaled_axis()) * Matrix4::new_translation(&self.position)
+
+        Matrix4::new_nonuniform_scaling(&self.scale)
+            * Matrix4::new_rotation(self.rotation.scaled_axis())
+            * Matrix4::new_translation(&self.position)
     }
 
     pub fn translate(&mut self, t: Vector3<f32>) {

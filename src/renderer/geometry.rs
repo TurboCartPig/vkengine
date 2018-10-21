@@ -7,10 +7,7 @@ use genmesh::{
 };
 use renderer::Vertex;
 use specs::DenseVecStorage;
-use std::{
-    fmt::Debug,
-    sync::Arc,
-};
+use std::{fmt::Debug, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     device::Device,
@@ -89,15 +86,12 @@ impl MeshComponent {
                 device.clone(),
                 BufferUsage::all(),
                 vertex_data.iter().cloned(),
-            )
-            .expect("Failed to create vertex buffer");
+            ).expect("Failed to create vertex buffer");
 
             vertex_buffer
         };
 
-        Self {
-            vertex_buffer,
-        }
+        Self { vertex_buffer }
     }
 }
 
@@ -152,33 +146,32 @@ where
     P: EmitTriangles<Vertex = usize>,
     G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
 {
-     let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
+    let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
 
-     let indexed_polygons = generator
+    let indexed_polygons = generator
          .indexed_polygon_iter()
          .triangulate()
          // .vertecies() might do what I want
          .map(|Triangle { x, y, z }| (x, y, z))
          .collect::<Vec<_>>();
 
-     let mut indecies = Vec::with_capacity(indexed_polygons.len());
+    let mut indecies = Vec::with_capacity(indexed_polygons.len());
 
-     // FIXME Find a differnt way to turn Vec<[u16; 3]> into Vec<u16>
-     for (x, y, z) in indexed_polygons {
-         indecies.push(x as u16);
-         indecies.push(y as u16);
-         indecies.push(z as u16);
-     }
+    // FIXME Find a differnt way to turn Vec<[u16; 3]> into Vec<u16>
+    for (x, y, z) in indexed_polygons {
+        indecies.push(x as u16);
+        indecies.push(y as u16);
+        indecies.push(z as u16);
+    }
 
-     let shared_vertecies = shared_vertecies
-         .iter()
-         .map(|v| Vertex {
-             position: v.pos.into(),
-             normal: v.normal.into(),
-         })
-         .collect::<Vec<_>>();
+    let shared_vertecies = shared_vertecies
+        .iter()
+        .map(|v| Vertex {
+            position: v.pos.into(),
+            normal: v.normal.into(),
+        }).collect::<Vec<_>>();
 
-     // println!("Shared Vertecies: {:?}", shared_vertecies);
+    // println!("Shared Vertecies: {:?}", shared_vertecies);
 
-     (shared_vertecies, indecies)
+    (shared_vertecies, indecies)
 }

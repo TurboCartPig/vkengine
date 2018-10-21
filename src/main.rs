@@ -12,19 +12,18 @@ extern crate specs;
 extern crate specs_derive;
 
 mod components;
-mod resources;
 mod renderer;
+mod resources;
 mod systems;
 
 use self::{
-    resources::{DeltaTime, Keyboard, Mouse, ShouldClose},
     components::Transform,
     renderer::{
         camera::{ActiveCamera, Camera},
-        geometry::{Shape, MeshComponent},
-        Renderer,
-        Surface,
+        geometry::{MeshComponent, Shape},
+        Renderer, Surface,
     },
+    resources::{DeltaTime, Keyboard, Mouse, ShouldClose},
     systems::{TimeSystem, TransformSystem},
 };
 use na::{UnitQuaternion, Vector3};
@@ -44,7 +43,10 @@ struct EventsLoopSystem {
 
 impl EventsLoopSystem {
     pub fn new(events_loop: EventsLoop, surface: Surface) -> Self {
-        EventsLoopSystem { events_loop, surface }
+        EventsLoopSystem {
+            events_loop,
+            surface,
+        }
     }
 }
 
@@ -145,8 +147,7 @@ fn main() {
         .with(MeshComponent::from_shape(
             renderer.device.clone(),
             Shape::Plane(None),
-        ))
-        .build();
+        )).build();
 
     // Cube
     world
@@ -154,15 +155,21 @@ fn main() {
         .with(Transform {
             position: Vector3::new(2.0, 0.0, -5.0),
             ..Transform::default()
-        })
-        .with(MeshComponent::from_shape(renderer.device.clone(), Shape::Cube))
-        .build();
+        }).with(MeshComponent::from_shape(
+            renderer.device.clone(),
+            Shape::Cube,
+        )).build();
 
     // Camera
     world
         .create_entity()
-        .with(Transform { rotation: UnitQuaternion::look_at_rh(&Vector3::new(0.0, 0.0, -1.0), &Vector3::new(0.0, -1.0, 0.0)), ..Transform::default() })
-        .with(Camera::default())
+        .with(Transform {
+            rotation: UnitQuaternion::look_at_rh(
+                &Vector3::new(0.0, 0.0, -1.0),
+                &Vector3::new(0.0, -1.0, 0.0),
+            ),
+            ..Transform::default()
+        }).with(Camera::default())
         .with(ActiveCamera)
         .build();
 
