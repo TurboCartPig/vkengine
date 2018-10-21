@@ -9,7 +9,8 @@ use self::{
     queues::{QueueFamilyIds, QueueFamilyTypes},
     shaders::ShaderSet,
 };
-use components::{DeltaTime, Transform};
+use components::Transform;
+use resources::DeltaTime;
 use specs::prelude::*;
 use std::{
     cmp::{max, min},

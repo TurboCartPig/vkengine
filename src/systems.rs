@@ -1,4 +1,5 @@
-use components::{DeltaTime, Keyboard, Mouse, Transform};
+use resources::{DeltaTime, Keyboard, Mouse};
+use components::Transform;
 use float_duration::TimePoint;
 use na::{Vector3, UnitQuaternion};
 use renderer::camera::Camera;

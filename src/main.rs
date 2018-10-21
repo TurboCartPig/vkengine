@@ -12,11 +12,13 @@ extern crate specs;
 extern crate specs_derive;
 
 mod components;
+mod resources;
 mod renderer;
 mod systems;
 
 use self::{
-    components::{DeltaTime, Keyboard, Mouse, ShouldClose, Transform},
+    resources::{DeltaTime, Keyboard, Mouse, ShouldClose},
+    components::Transform,
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{Shape, MeshComponent},
@@ -119,12 +121,14 @@ fn main() {
     // Register components
     world.register::<Transform>();
     world.register::<renderer::geometry::MeshComponent>();
+    world.register::<ActiveCamera>();
     world.register::<Camera>();
 
     // Add resources
     world.add_resource(DeltaTime::default());
     world.add_resource(ShouldClose::default());
     world.add_resource(Keyboard::default());
+    world.add_resource(Mouse::default());
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
