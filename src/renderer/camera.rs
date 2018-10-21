@@ -1,8 +1,12 @@
 use na::{Matrix4, Perspective3};
-use specs::HashMapStorage;
+use specs::{HashMapStorage, NullStorage};
 
 static CLIP_NEAR: f32 = 0.01f32;
 static CLIP_FAR: f32 = 100f32;
+
+#[derive(Component, Default)]
+#[storage(NullStorage)]
+pub struct ActiveCamera;
 
 #[derive(Component)]
 #[storage(HashMapStorage)]

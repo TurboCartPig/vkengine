@@ -18,7 +18,7 @@ mod systems;
 use self::{
     components::{DeltaTime, Keyboard, Mouse, ShouldClose, Transform},
     renderer::{
-        camera::Camera,
+        camera::{ActiveCamera, Camera},
         geometry::{Shape, MeshComponent},
         Renderer,
         Surface,
@@ -34,7 +34,6 @@ use winit::EventsLoop;
 //TODO Use glyph-brush insted of vulkano_text
 //TODO Fix/Impl lighting
 //TODO Fix all tranformations and matrix math
-//TODO Add ActiveCamera as Component with NullStorage
 
 struct EventsLoopSystem {
     events_loop: EventsLoop,
@@ -160,6 +159,7 @@ fn main() {
         .create_entity()
         .with(Transform { rotation: UnitQuaternion::look_at_rh(&Vector3::new(0.0, 0.0, -1.0), &Vector3::new(0.0, -1.0, 0.0)), ..Transform::default() })
         .with(Camera::default())
+        .with(ActiveCamera)
         .build();
 
     // Create dispatcher

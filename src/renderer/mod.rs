@@ -4,7 +4,7 @@ mod queues;
 mod shaders;
 
 use self::{
-    camera::Camera,
+    camera::{ActiveCamera, Camera},
     geometry::MeshComponent,
     queues::{QueueFamilyIds, QueueFamilyTypes},
     shaders::ShaderSet,
@@ -206,11 +206,12 @@ impl<'a> System<'a> for Renderer {
     type SystemData = (
         ReadStorage<'a, MeshComponent>,
         ReadStorage<'a, Transform>,
+        ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Camera>,
         Read<'a, DeltaTime>,
     );
 
-    fn run(&mut self, (mesh, transform, mut camera, _delta_time): Self::SystemData) {
+    fn run(&mut self, (mesh, transform, active_camera, mut camera, _delta_time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
@@ -232,7 +233,7 @@ impl<'a> System<'a> for Renderer {
             };
 
         // Camera
-        let (camera, camera_t) = (&mut camera, &transform).join().next().unwrap();
+        let (_, camera, camera_t) = (&active_camera, &mut camera, &transform).join().next().unwrap();
         let dimensions = self.swapchain.dimensions();
         camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
         let view = camera_t.as_matrix();
