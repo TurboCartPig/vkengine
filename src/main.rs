@@ -1,13 +1,12 @@
-extern crate winit;
-#[macro_use]
-extern crate vulkano;
-extern crate vulkano_win;
-#[macro_use]
-extern crate vulkano_shader_derive;
+extern crate alga;
 extern crate float_duration;
 extern crate genmesh;
 extern crate nalgebra as na;
 extern crate specs;
+extern crate vulkano;
+extern crate vulkano_shaders;
+extern crate vulkano_win;
+extern crate winit;
 #[macro_use]
 extern crate specs_derive;
 
@@ -122,7 +121,7 @@ fn main() {
 
     // Register components
     world.register::<Transform>();
-    world.register::<renderer::geometry::MeshComponent>();
+    world.register::<MeshComponent>();
     world.register::<ActiveCamera>();
     world.register::<Camera>();
 
@@ -134,20 +133,20 @@ fn main() {
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
-    let t = Transform {
-        position: Vector3::new(0.0, 0.0, -3.0),
-        rotation: UnitQuaternion::from_euler_angles(0.0, 3.14 / 4.0, 0.0),
-        scale: Vector3::new(1.0, 1.0, 1.0),
-    };
 
     // Plane
     world
         .create_entity()
-        .with(t)
+        .with(Transform {
+            position: Vector3::new(0.0, 0.0, -3.0),
+            rotation: UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_4, 0.0),
+            ..Transform::default()
+        })
         .with(MeshComponent::from_shape(
             renderer.device.clone(),
             Shape::Plane(None),
-        )).build();
+        ))
+        .build();
 
     // Cube
     world
@@ -155,10 +154,12 @@ fn main() {
         .with(Transform {
             position: Vector3::new(2.0, 0.0, -5.0),
             ..Transform::default()
-        }).with(MeshComponent::from_shape(
+        })
+        .with(MeshComponent::from_shape(
             renderer.device.clone(),
             Shape::Cube,
-        )).build();
+        ))
+        .build();
 
     // Camera
     world
@@ -169,13 +170,14 @@ fn main() {
                 &Vector3::new(0.0, -1.0, 0.0),
             ),
             ..Transform::default()
-        }).with(Camera::default())
+        })
+        .with(Camera::default())
         .with(ActiveCamera)
         .build();
 
     // Create dispatcher
     let mut dispatcher = DispatcherBuilder::new()
-        //.with(PrintSystem, "print", &[])
+        // .with(PrintSystem::default(), "print", &[])
         .with(TimeSystem::default(), "time", &[])
         .with(TransformSystem, "transform", &["time"])
         .with(renderer, "renderer", &["time"])

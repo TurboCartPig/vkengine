@@ -6,6 +6,7 @@ use genmesh::{
     EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
 };
 use renderer::Vertex;
+use specs::Component;
 use specs::DenseVecStorage;
 use std::{fmt::Debug, sync::Arc};
 use vulkano::{
@@ -86,7 +87,8 @@ impl MeshComponent {
                 device.clone(),
                 BufferUsage::all(),
                 vertex_data.iter().cloned(),
-            ).expect("Failed to create vertex buffer");
+            )
+            .expect("Failed to create vertex buffer");
 
             vertex_buffer
         };
@@ -149,11 +151,11 @@ where
     let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
 
     let indexed_polygons = generator
-         .indexed_polygon_iter()
-         .triangulate()
-         // .vertecies() might do what I want
-         .map(|Triangle { x, y, z }| (x, y, z))
-         .collect::<Vec<_>>();
+        .indexed_polygon_iter()
+        .triangulate()
+        // .vertecies() might do what I want
+        .map(|Triangle { x, y, z }| (x, y, z))
+        .collect::<Vec<_>>();
 
     let mut indecies = Vec::with_capacity(indexed_polygons.len());
 
@@ -169,7 +171,8 @@ where
         .map(|v| Vertex {
             position: v.pos.into(),
             normal: v.normal.into(),
-        }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
 
     // println!("Shared Vertecies: {:?}", shared_vertecies);
 

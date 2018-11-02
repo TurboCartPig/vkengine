@@ -1,4 +1,4 @@
-use na::{Matrix4, UnitQuaternion, Vector3};
+use na::{zero, Matrix4, UnitQuaternion, Vector3};
 use specs::prelude::*;
 
 #[derive(Component, Debug)]
@@ -35,6 +35,12 @@ impl Transform {
         self.position += self.rotation * t;
     }
 
+    pub fn translate_along(&mut self, dir: Vector3<f32>, scaler: f32) {
+        if dir != zero() {
+            self.position += self.rotation * { dir.normalize() * scaler };
+        }
+    }
+
     pub fn translate_forward(&mut self, s: f32) {
         self.translate(Vector3::new(0.0, 0.0, s))
     }
@@ -56,7 +62,7 @@ impl Default for Transform {
     fn default() -> Self {
         Transform {
             position: Vector3::new(0.0, 0.0, 0.0),
-            rotation: UnitQuaternion::from_euler_angles(0.0, 0.0, 0.0),
+            rotation: UnitQuaternion::look_at_rh(&-Vector3::z(), &-Vector3::y()),
             scale: Vector3::new(1.0, 1.0, 1.0),
         }
     }

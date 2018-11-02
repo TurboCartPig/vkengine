@@ -1,4 +1,5 @@
 use na::{Matrix4, Perspective3};
+use specs::Component;
 use specs::{HashMapStorage, NullStorage};
 
 static CLIP_NEAR: f32 = 0.01f32;

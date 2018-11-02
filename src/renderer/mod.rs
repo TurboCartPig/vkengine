@@ -18,6 +18,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use vulkano::{
+    app_info_from_cargo_toml,
     buffer::{cpu_pool::CpuBufferPool, BufferUsage},
     command_buffer::{AutoCommandBufferBuilder, DynamicState},
     descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
@@ -25,12 +26,15 @@ use vulkano::{
     format::Format,
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
     image::{attachment::AttachmentImage, SwapchainImage},
+    impl_vertex,
     instance::{
         self,
         debug::{DebugCallback, MessageTypes},
         DeviceExtensions, InstanceExtensions, PhysicalDevice, PhysicalDeviceType,
     },
+    ordered_passes_renderpass,
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
+    single_pass_renderpass,
     swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
     sync::{self, FlushError, GpuFuture},
 };
@@ -67,7 +71,7 @@ pub struct Renderer {
     graphics_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
     dynamic_state: DynamicState,
     depth_buffer: Arc<AttachmentImage>,
-    uniform_buffer_pool: CpuBufferPool<shaders::vertex::ty::Data>,
+    uniform_buffer_pool: CpuBufferPool<shaders::VertexInput>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
     previous_frame_end: Box<GpuFuture + Send + Sync>,
     //_callback: Option<DebugCallback>,
@@ -97,7 +101,7 @@ impl Renderer {
 
         let framebuffers = None;
 
-        let shaders = load_shaders(device.clone());
+        let shaders = ShaderSet::new(device.clone());
 
         let render_pass = build_render_pass(device.clone(), swapchain.format());
 
@@ -118,7 +122,7 @@ impl Renderer {
         };
 
         let uniform_buffer_pool =
-            CpuBufferPool::<shaders::vertex::ty::Data>::new(device.clone(), BufferUsage::all());
+            CpuBufferPool::<shaders::VertexInput>::new(device.clone(), BufferUsage::all());
 
         let descriptor_set_pool = FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0);
 
@@ -195,7 +199,8 @@ impl Renderer {
                             .build()
                             .unwrap(),
                     )
-                }).collect::<Vec<_>>(),
+                })
+                .collect::<Vec<_>>(),
         );
 
         mem::replace(&mut self.framebuffers, new_framebuffers);
@@ -247,7 +252,7 @@ impl<'a> System<'a> for Renderer {
             let uniform_buffer_subbuffer = {
                 let model = transform.as_matrix();
 
-                let uniform_data = shaders::vertex::ty::Data {
+                let uniform_data = shaders::VertexInput {
                     view: view.into(),
                     proj: camera.projection(),
                     model: model.into(),
@@ -270,14 +275,16 @@ impl<'a> System<'a> for Renderer {
                     self.device.clone(),
                     self.queues.graphics.family(),
                     Subpass::from(self.render_pass.clone(), 0).unwrap(),
-                ).unwrap()
+                )
+                .unwrap()
                 .draw(
                     self.graphics_pipeline.clone(),
                     &self.dynamic_state,
                     vec![mesh.vertex_buffer.clone()],
                     descriptor_set,
                     (),
-                ).unwrap()
+                )
+                .unwrap()
                 .build()
                 .unwrap();
 
@@ -302,12 +309,14 @@ impl<'a> System<'a> for Renderer {
             let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
                 self.queues.graphics.family(),
-            ).unwrap()
+            )
+            .unwrap()
             .begin_render_pass(
                 self.framebuffers.as_ref().unwrap()[image_number].clone(),
                 true, // This makes it so that I can execute secondary command buffers
                 vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
-            ).unwrap();
+            )
+            .unwrap();
 
             unsafe {
                 // Execute all the secondary command buffers
@@ -327,7 +336,8 @@ impl<'a> System<'a> for Renderer {
                 self.queues.present.clone(),
                 self.swapchain.clone(),
                 image_number,
-            ).then_signal_fence_and_flush();
+            )
+            .then_signal_fence_and_flush();
 
         previous_frame_end = match present_future {
             Ok(future) => Box::new(future) as Box<_>,
@@ -366,7 +376,8 @@ fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCal
             "Debug callback from {}: {}",
             msg.layer_prefix, msg.description
         );
-    }).ok()
+    })
+    .ok()
 }
 
 fn new_instance() -> Arc<instance::Instance> {
@@ -693,16 +704,8 @@ fn new_swapchain_and_images(
         present_mode,
         true,
         None,
-    ).expect("Failed to create swapchain")
-}
-
-fn load_shaders(device: Arc<Device>) -> ShaderSet {
-    let vertex =
-        shaders::vertex::Shader::load(device.clone()).expect("Failed to create shader module");
-    let fragment =
-        shaders::fragment::Shader::load(device.clone()).expect("Failed to create shader module");
-
-    ShaderSet { vertex, fragment }
+    )
+    .expect("Failed to create swapchain")
 }
 
 fn build_render_pass(device: Arc<Device>, format: Format) -> Arc<RenderPassAbstract + Send + Sync> {
@@ -727,7 +730,8 @@ fn build_render_pass(device: Arc<Device>, format: Format) -> Arc<RenderPassAbstr
                 color: [color],
                 depth_stencil: {depth}
             }
-        ).unwrap(),
+        )
+        .unwrap(),
     )
 }
 

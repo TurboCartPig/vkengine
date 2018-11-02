@@ -1,7 +1,7 @@
 use components::Transform;
 use float_duration::TimePoint;
 use na::{UnitQuaternion, Vector3};
-use renderer::camera::Camera;
+use renderer::camera::{ActiveCamera, Camera};
 use resources::{DeltaTime, Keyboard, Mouse};
 use specs::prelude::*;
 use std::{mem, time::Instant};
@@ -44,17 +44,20 @@ impl<'a> System<'a> for TransformSystem {
         Read<'a, Keyboard>,
         Write<'a, Mouse>,
         Read<'a, DeltaTime>,
-        ReadStorage<'a, Camera>,
+        ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Transform>,
     );
 
-    fn run(&mut self, (keyboard, mut mouse, delta_time, camera, mut transform): Self::SystemData) {
+    fn run(
+        &mut self,
+        (keyboard, mut mouse, delta_time, active_camera, mut transform): Self::SystemData,
+    ) {
         // If mouse is not grabbed, then the window is not focused, and we sould not handle input
         if !mouse.grabbed {
             return;
         }
 
-        let (_, camera_t) = (&camera, &mut transform).join().next().unwrap();
+        let (_, camera_t) = (&active_camera, &mut transform).join().next().unwrap();
 
         if keyboard.pressed(VirtualKeyCode::W) {
             camera_t.translate_forward(1.0 * delta_time.delta as f32);
@@ -72,25 +75,51 @@ impl<'a> System<'a> for TransformSystem {
             camera_t.translate_right(1.0 * delta_time.delta as f32);
         }
 
-        let (yaw, pitch) = mouse.move_delta;
-        let (yaw, pitch) = (yaw as f32 * -0.001, pitch as f32 * 0.001);
+        // let z_axis = if keyboard.pressed(VirtualKeyCode::W) {
+        //     1.0
+        // } else if keyboard.pressed(VirtualKeyCode::S) {
+        //     -1.0
+        // } else {
+        //     0.0
+        // };
 
-        camera_t.rotate_global(UnitQuaternion::from_axis_angle(&Vector3::x_axis(), pitch));
-        camera_t.rotate_local(UnitQuaternion::from_axis_angle(&Vector3::y_axis(), yaw));
+        // camera_t.translate_along(Vector3::new(0.0, 0.0, z_axis), delta_time.delta as f32);
+
+        let (yaw, pitch) = mouse.move_delta;
+        let (yaw, pitch) = (yaw as f32 * 0.001, pitch as f32 * 0.001);
+
+        camera_t.rotate_local(UnitQuaternion::from_axis_angle(&Vector3::x_axis(), pitch));
+        camera_t.rotate_global(UnitQuaternion::from_axis_angle(&Vector3::y_axis(), yaw));
+        // let (_, camera_pitch, camera_yaw) = camera_t.rotation.euler_angles();
+        // camera_t.rotation = UnitQuaternion::from_euler_angles(0.0, camera_pitch + pitch, camera_yaw + yaw);
 
         *mouse = Mouse::default();
     }
 }
 
 #[allow(dead_code)]
-pub struct PrintSystem;
+pub struct PrintSystem {
+    counter: u32,
+}
 
 impl<'a> System<'a> for PrintSystem {
     type SystemData = ReadStorage<'a, Transform>;
 
     fn run(&mut self, transform: Self::SystemData) {
-        for t in transform.join() {
-            println!("Hello transform {:?}", t);
+        let freq = 60;
+        if self.counter == freq {
+            for t in transform.join() {
+                println!("Hello transform {:?}", t);
+            }
+            self.counter = 0;
+        } else {
+            self.counter += 1;
         }
+    }
+}
+
+impl Default for PrintSystem {
+    fn default() -> Self {
+        Self { counter: 0 }
     }
 }
