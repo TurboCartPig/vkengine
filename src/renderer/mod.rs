@@ -22,7 +22,7 @@ use vulkano::{
     buffer::{cpu_pool::CpuBufferPool, BufferUsage},
     command_buffer::{AutoCommandBufferBuilder, DynamicState},
     descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
-    device::Device,
+    device::{Device, DeviceExtensions, Features},
     format::Format,
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
     image::{attachment::AttachmentImage, SwapchainImage},
@@ -30,9 +30,8 @@ use vulkano::{
     instance::{
         self,
         debug::{DebugCallback, MessageTypes},
-        DeviceExtensions, InstanceExtensions, PhysicalDevice, PhysicalDeviceType,
+        InstanceExtensions, PhysicalDevice, PhysicalDeviceType,
     },
-    ordered_passes_renderpass,
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     single_pass_renderpass,
     swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
@@ -244,7 +243,7 @@ impl<'a> System<'a> for Renderer {
             .unwrap();
         let dimensions = self.swapchain.dimensions();
         camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
-        let view = camera_t.as_matrix();
+        let view = camera_t.as_fps_view_matrix();
 
         let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
 
@@ -380,6 +379,13 @@ fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCal
     .ok()
 }
 
+/// Creates a vulkan instance based on desired extensions and layers
+///
+/// # Panics
+///
+/// - Panics if desired layer is not available
+/// - Panics if a core extension failes to load
+/// - Panics if instance can not be created
 fn new_instance() -> Arc<instance::Instance> {
     let info = app_info_from_cargo_toml!();
 
@@ -393,7 +399,6 @@ fn new_instance() -> Arc<instance::Instance> {
             khr_xlib_surface: true,
             khr_xcb_surface: true,
             khr_wayland_surface: true,
-            khr_mir_surface: true,
 
             // Android
             khr_android_surface: true,
@@ -417,9 +422,6 @@ fn new_instance() -> Arc<instance::Instance> {
         supported.intersection(&desired)
     };
 
-    println!("Requested extensions: {:?}\n", extensions);
-
-    // FIXME Check for with-debugging feature
     let layers = {
         let desired = vec![
             //"VK_LAYER_LUNARG_api_dump",
@@ -431,12 +433,17 @@ fn new_instance() -> Arc<instance::Instance> {
             //"VK_LAYER_LUNARG_screenshot",
             "VK_LAYER_LUNARG_standard_validation",
             //"VK_LAYER_LUNARG_vktrace",
+            "VK_LAYER_VALVE_steam_overlay",
         ];
 
+        // Panics if a desired layer is not available
         for dlayer in desired.clone() {
             let mut available = instance::layers_list().unwrap();
 
+            println!("Available instance layers");
+
             available
+                .inspect(|alayer| println!("\t{:?}", alayer.name()))
                 .find(|alayer| alayer.name() == dlayer)
                 .expect("Failed to find desired validation layer");
         }
@@ -444,12 +451,16 @@ fn new_instance() -> Arc<instance::Instance> {
         desired
     };
 
-    println!("Requested layers: {:?}\n", layers);
-
     instance::Instance::new(Some(&info), &extensions, layers)
         .expect("Failed to create vulkan instance")
 }
 
+/// Creates a logical device and its queues
+///
+/// # Panics
+///
+/// - Panics if required features are not supported
+/// - Panics if required device extensions are not supported
 fn new_device_and_queues(
     instance: Arc<instance::Instance>,
     surface: Surface,
@@ -556,24 +567,37 @@ fn new_device_and_queues(
     println!("Queues to be created: {:?}", queues.len());
     println!("Queue types to be created: {:?}", queue_types);
 
-    // TODO: Check for minimum required features
-    let features = instance::Features {
-        fill_mode_non_solid: true,
-        ..instance::Features::none()
+    let features = {
+        // TODO: Check for minimum required features
+        let required_features = Features {
+            fill_mode_non_solid: true,
+            ..Features::none()
+        };
+
+        let optimal_features = Features::all();
+
+        // Panic if desired features are not supported
+        assert!(physical
+            .supported_features()
+            .superset_of(&required_features));
+        assert!(optimal_features.superset_of(&required_features));
+
+        optimal_features.intersection(physical.supported_features())
     };
 
-    let required_extensions = DeviceExtensions {
-        khr_swapchain: true,
-        ..DeviceExtensions::none()
-    };
+    let extensions = {
+        let required_extensions = DeviceExtensions {
+            khr_swapchain: true,
+            ..DeviceExtensions::none()
+        };
 
-    let device_extensions =
-        DeviceExtensions::supported_by_device(physical).intersection(&required_extensions);
+        DeviceExtensions::supported_by_device(physical).intersection(&required_extensions)
+    };
 
     // Check if requirements are met
     assert_eq!(device_extensions, required_extensions);
 
-    let (device, queues_iter) = Device::new(physical, &features, &device_extensions, queues)
+    let (device, queues_iter) = Device::new(physical, &features, &extensions, queues)
         .expect("Failed to create logical device");
 
     // FIXME What if there are more then one general queue
@@ -619,6 +643,12 @@ fn new_device_and_queues(
     (device, queues)
 }
 
+/// Cretes new swapchain and its images
+///
+/// # Panics
+///
+/// - Panics if required capabilities are not present
+/// - Panics if swapchain creation failes
 fn new_swapchain_and_images(
     device: Arc<Device>,
     surface: Surface,
@@ -645,6 +675,7 @@ fn new_swapchain_and_images(
 
     // First available format
     let format = capabilities.supported_formats[0].0;
+    println!("Supported formats: {:?}", capabilities.supported_formats);
 
     // Current extent seems to be the screen res normaly
     // FIXME The dimensions dont match the inner window size

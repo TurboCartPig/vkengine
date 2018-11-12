@@ -4,11 +4,11 @@ version = "0.1.0"
 authors = ["Dennis Kristiansen <dennkris@live.no>"]
 
 [dependencies]
-winit = "0.17.2"
-vulkano = "0.10.0"
-vulkano-win = "0.10.0"
-# vulkano-shaders = "0.10.0"
-vulkano-shaders = { path = "../vulkano/vulkano-shaders" }
+winit = "0.18.0"
+vulkano = "0.11.0"
+vulkano-win = "0.11.0"
+vulkano-shaders = "0.11.0"
+#vulkano-shaders = { path = "../vulkano/vulkano-shaders" }
 #vulkano-shader-derive = "0.10.0"
 #vulkano = { path = "../vulkano/vulkano" }
 #vulkano-shader-derive = { path = "../vulkano/vulkano-shader-derive" }
@@ -17,7 +17,7 @@ vulkano-shaders = { path = "../vulkano/vulkano-shaders" }
 float_duration = "0.3.3"
 
 alga = "0.7.2"
-nalgebra = "0.16.8"
+nalgebra = "0.16.10"
 #ncollide3d = "*"
 #nphysics3d = "*"
 
