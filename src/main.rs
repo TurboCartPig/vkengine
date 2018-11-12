@@ -179,7 +179,7 @@ fn main() {
     let mut dispatcher = DispatcherBuilder::new()
         // .with(PrintSystem::default(), "print", &[])
         .with(TimeSystem::default(), "time", &[])
-        .with(TransformSystem, "transform", &["time"])
+        .with(TransformSystem::default(), "transform", &["time"])
         .with(renderer, "renderer", &["time"])
         .with_barrier()
         .with_thread_local(events_loop_system)

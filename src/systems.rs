@@ -1,11 +1,13 @@
 use components::Transform;
 use float_duration::TimePoint;
 use na::{UnitQuaternion, Vector3};
-use renderer::camera::{ActiveCamera, Camera};
+use renderer::camera::ActiveCamera;
 use resources::{DeltaTime, Keyboard, Mouse};
 use specs::prelude::*;
 use std::{mem, time::Instant};
 use winit::VirtualKeyCode;
+use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::PI;
 
 pub struct TimeSystem {
     first_frame: Instant,
@@ -37,7 +39,19 @@ impl<'a> System<'a> for TimeSystem {
     }
 }
 
-pub struct TransformSystem;
+pub struct TransformSystem{
+    pitch: f32,
+    yaw: f32,
+}
+
+impl Default for TransformSystem {
+    fn default() -> Self {
+        Self {
+            pitch: 0.0,
+            yaw: 0.0,
+        }
+    }
+}
 
 impl<'a> System<'a> for TransformSystem {
     type SystemData = (
@@ -75,23 +89,23 @@ impl<'a> System<'a> for TransformSystem {
             camera_t.translate_right(1.0 * delta_time.delta as f32);
         }
 
-        // let z_axis = if keyboard.pressed(VirtualKeyCode::W) {
-        //     1.0
-        // } else if keyboard.pressed(VirtualKeyCode::S) {
-        //     -1.0
-        // } else {
-        //     0.0
-        // };
-
-        // camera_t.translate_along(Vector3::new(0.0, 0.0, z_axis), delta_time.delta as f32);
-
         let (yaw, pitch) = mouse.move_delta;
         let (yaw, pitch) = (yaw as f32 * 0.001, pitch as f32 * 0.001);
 
-        camera_t.rotate_local(UnitQuaternion::from_axis_angle(&Vector3::x_axis(), pitch));
-        camera_t.rotate_global(UnitQuaternion::from_axis_angle(&Vector3::y_axis(), yaw));
-        // let (_, camera_pitch, camera_yaw) = camera_t.rotation.euler_angles();
-        // camera_t.rotation = UnitQuaternion::from_euler_angles(0.0, camera_pitch + pitch, camera_yaw + yaw);
+        self.pitch += pitch;
+        self.yaw += yaw;
+
+        if self.pitch > FRAC_PI_2 { self.pitch = FRAC_PI_2 }
+        if self.pitch < -FRAC_PI_2 { self.pitch = -FRAC_PI_2 }
+        if self.yaw > PI * 2.0 { self.yaw -= PI * 2.0 }
+        if self.yaw < -PI * 2.0 { self.yaw += PI * 2.0 }
+
+        camera_t.rotation = UnitQuaternion::from_euler_angles(0.0, self.pitch, self.yaw);
+
+        // camera_t.rotate_local(UnitQuaternion::from_axis_angle(&Vector3::x_axis(), pitch));
+        // camera_t.rotate_global(UnitQuaternion::from_axis_angle(&Vector3::y_axis(), yaw));
+        // camera_t.rotate_local(UnitQuaternion::from_scaled_axis(Vector3::x() * pitch));
+        // camera_t.rotate_global(UnitQuaternion::from_scaled_axis(Vector3::y() * yaw));
 
         *mouse = Mouse::default();
     }
