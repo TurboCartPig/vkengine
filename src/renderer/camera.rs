@@ -1,6 +1,7 @@
 use na::{Matrix4, Perspective3};
 use specs::Component;
 use specs::{HashMapStorage, NullStorage};
+use specs_derive::Component;
 
 static CLIP_NEAR: f32 = 0.01f32;
 static CLIP_FAR: f32 = 100f32;

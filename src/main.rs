@@ -1,3 +1,5 @@
+#![feature(custom_attribute)]
+
 extern crate alga;
 extern crate float_duration;
 extern crate genmesh;
@@ -7,7 +9,6 @@ extern crate vulkano;
 extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
-#[macro_use]
 extern crate specs_derive;
 
 mod components;

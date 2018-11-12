@@ -1,5 +1,6 @@
 use na::{zero, Matrix4, UnitQuaternion, Vector3, Vector4};
 use specs::prelude::*;
+use specs_derive::Component;
 
 #[derive(Component, Debug)]
 #[storage(VecStorage)]

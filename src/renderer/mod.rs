@@ -594,10 +594,7 @@ fn new_device_and_queues(
         DeviceExtensions::supported_by_device(physical).intersection(&required_extensions)
     };
 
-    // Check if requirements are met
-    assert_eq!(device_extensions, required_extensions);
-
-    let (device, queues_iter) = Device::new(physical, &features, &extensions, queues)
+        let (device, queues_iter) = Device::new(physical, &features, &extensions, queues)
         .expect("Failed to create logical device");
 
     // FIXME What if there are more then one general queue

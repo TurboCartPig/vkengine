@@ -8,6 +8,7 @@ use genmesh::{
 use renderer::Vertex;
 use specs::Component;
 use specs::DenseVecStorage;
+use specs_derive::Component;
 use std::{fmt::Debug, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
