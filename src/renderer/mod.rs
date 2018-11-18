@@ -243,13 +243,13 @@ impl<'a> System<'a> for Renderer {
             .unwrap();
         let dimensions = self.swapchain.dimensions();
         camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
-        let view = camera_t.as_fps_view_matrix();
+        let view = camera_t.to_view_matrix();
 
         let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
 
         for (mesh, transform) in (&mesh, &transform).join() {
             let uniform_buffer_subbuffer = {
-                let model = transform.as_matrix();
+                let model = transform.to_matrix();
 
                 let uniform_data = shaders::VertexInput {
                     view: view.into(),
@@ -594,7 +594,7 @@ fn new_device_and_queues(
         DeviceExtensions::supported_by_device(physical).intersection(&required_extensions)
     };
 
-        let (device, queues_iter) = Device::new(physical, &features, &extensions, queues)
+    let (device, queues_iter) = Device::new(physical, &features, &extensions, queues)
         .expect("Failed to create logical device");
 
     // FIXME What if there are more then one general queue

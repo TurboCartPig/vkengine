@@ -5,11 +5,11 @@ extern crate float_duration;
 extern crate genmesh;
 extern crate nalgebra as na;
 extern crate specs;
+extern crate specs_derive;
 extern crate vulkano;
 extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
-extern crate specs_derive;
 
 mod components;
 mod renderer;
@@ -136,26 +136,23 @@ fn main() {
     world.create_entity().with(Transform::default()).build();
 
     // Plane
-    world
-        .create_entity()
-        .with(Transform {
-            position: Vector3::new(0.0, 0.0, -3.0),
-            rotation: UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_4, 0.0),
-            ..Transform::default()
-        })
-        .with(MeshComponent::from_shape(
-            renderer.device.clone(),
-            Shape::Plane(None),
-        ))
-        .build();
+    // world
+    //     .create_entity()
+    //     .with(Transform {
+    //         position: Vector3::new(0.0, 0.0, -3.0),
+    //         rotation: UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_4, 0.0),
+    //         ..Transform::default()
+    //     })
+    //     .with(MeshComponent::from_shape(
+    //         renderer.device.clone(),
+    //         Shape::Plane(None),
+    //     ))
+    //     .build();
 
     // Cube
     world
         .create_entity()
-        .with(Transform {
-            position: Vector3::new(2.0, 0.0, -5.0),
-            ..Transform::default()
-        })
+        .with(Transform::default())
         .with(MeshComponent::from_shape(
             renderer.device.clone(),
             Shape::Cube,
@@ -165,13 +162,7 @@ fn main() {
     // Camera
     world
         .create_entity()
-        .with(Transform {
-            rotation: UnitQuaternion::look_at_rh(
-                &Vector3::new(0.0, 0.0, -1.0),
-                &Vector3::new(0.0, -1.0, 0.0),
-            ),
-            ..Transform::default()
-        })
+        .with(Transform::default())
         .with(Camera::default())
         .with(ActiveCamera)
         .build();
@@ -180,7 +171,7 @@ fn main() {
     let mut dispatcher = DispatcherBuilder::new()
         // .with(PrintSystem::default(), "print", &[])
         .with(TimeSystem::default(), "time", &[])
-        .with(TransformSystem::default(), "transform", &["time"])
+        .with(TransformSystem, "transform", &["time"])
         .with(renderer, "renderer", &["time"])
         .with_barrier()
         .with_thread_local(events_loop_system)

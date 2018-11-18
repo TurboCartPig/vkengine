@@ -6,8 +6,7 @@ use genmesh::{
     EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
 };
 use renderer::Vertex;
-use specs::Component;
-use specs::DenseVecStorage;
+use specs::{Component, DenseVecStorage};
 use specs_derive::Component;
 use std::{fmt::Debug, sync::Arc};
 use vulkano::{

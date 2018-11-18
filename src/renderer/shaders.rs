@@ -11,10 +11,9 @@ pub struct ShaderSet {
 
 impl ShaderSet {
     pub fn new(device: Arc<Device>) -> Self {
-        let vertex = vertex::Shader::load(device.clone())
-            .expect("Failed to create shader module");
-        let fragment = fragment::Shader::load(device.clone())
-            .expect("Failed to create shader module");
+        let vertex = vertex::Shader::load(device.clone()).expect("Failed to create shader module");
+        let fragment =
+            fragment::Shader::load(device.clone()).expect("Failed to create shader module");
 
         Self { vertex, fragment }
     }
@@ -22,7 +21,7 @@ impl ShaderSet {
 
 mod vertex {
     use vulkano_shaders::shader;
-    
+
     shader!{
         ty: "vertex",
         path: "shaders/basic.vert"
@@ -31,7 +30,7 @@ mod vertex {
 
 mod fragment {
     use vulkano_shaders::shader;
-    
+
     shader!{
         ty: "fragment",
         path: "shaders/basic.frag"
