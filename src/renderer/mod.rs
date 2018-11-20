@@ -9,8 +9,8 @@ use self::{
     queues::{QueueFamilyIds, QueueFamilyTypes},
     shaders::ShaderSet,
 };
-use components::Transform;
-use resources::DeltaTime;
+use crate::components::Transform;
+use crate::resources::DeltaTime;
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
@@ -438,7 +438,7 @@ fn new_instance() -> Arc<instance::Instance> {
 
         // Panics if a desired layer is not available
         for dlayer in desired.clone() {
-            let mut available = instance::layers_list().unwrap();
+            let available = instance::layers_list().unwrap();
 
             println!("Available instance layers");
 

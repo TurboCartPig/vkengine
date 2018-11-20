@@ -2,6 +2,7 @@
 name = "vkengine"
 version = "0.1.0"
 authors = ["Dennis Kristiansen <dennkris@live.no>"]
+edition = "2018"
 
 [dependencies]
 winit = "0.18.0"

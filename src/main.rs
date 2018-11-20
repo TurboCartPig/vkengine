@@ -1,23 +1,11 @@
 #![feature(custom_attribute)]
 
-extern crate alga;
-extern crate float_duration;
-extern crate genmesh;
-extern crate hibitset;
-extern crate nalgebra as na;
-extern crate specs;
-extern crate specs_derive;
-extern crate vulkano;
-extern crate vulkano_shaders;
-extern crate vulkano_win;
-extern crate winit;
-
 mod components;
 mod renderer;
 mod resources;
 mod systems;
 
-use self::{
+use crate::{
     components::Transform,
     renderer::{
         camera::{ActiveCamera, Camera},

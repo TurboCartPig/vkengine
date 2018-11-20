@@ -2,7 +2,7 @@ use vulkano::{device::Queue, instance::QueueFamiliesIter};
 
 use std::sync::Arc;
 
-use renderer::Surface;
+use crate::renderer::Surface;
 
 // TODO Find a more dynamic way of storing queues
 // The point is to be able to have the same code work regardless of how many queues we actually vulkano_shader_derive

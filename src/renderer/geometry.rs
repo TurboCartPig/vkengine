@@ -5,7 +5,7 @@ use genmesh::{
     },
     EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
 };
-use renderer::Vertex;
+use crate::renderer::Vertex;
 use specs::{Component, DenseVecStorage};
 use specs_derive::Component;
 use std::{fmt::Debug, sync::Arc};

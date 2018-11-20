@@ -1,4 +1,4 @@
-use na::{Matrix4, Perspective3};
+use nalgebra::{Matrix4, Perspective3};
 use specs::{Component, HashMapStorage, NullStorage};
 use specs_derive::Component;
 
