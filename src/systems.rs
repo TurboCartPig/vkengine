@@ -1,13 +1,12 @@
-use crate::components::Transform;
+use crate::{
+    components::Transform,
+    renderer::camera::ActiveCamera,
+    resources::{DeltaTime, Keyboard, Mouse},
+};
 use float_duration::TimePoint;
 use nalgebra::{UnitQuaternion, Vector3};
-use crate::renderer::camera::ActiveCamera;
-use crate::resources::{DeltaTime, Keyboard, Mouse};
 use specs::prelude::*;
-use std::{
-    mem,
-    time::Instant,
-};
+use std::{mem, time::Instant};
 use winit::VirtualKeyCode;
 
 pub struct TimeSystem {

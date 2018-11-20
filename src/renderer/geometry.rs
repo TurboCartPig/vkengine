@@ -1,3 +1,4 @@
+use crate::renderer::Vertex;
 use genmesh::{
     generators::{
         Circle, Cone, Cube, Cylinder, IcoSphere, IndexedPolygon, Plane, SharedVertex, SphereUv,
@@ -5,7 +6,6 @@ use genmesh::{
     },
     EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
 };
-use crate::renderer::Vertex;
 use specs::{Component, DenseVecStorage};
 use specs_derive::Component;
 use std::{fmt::Debug, sync::Arc};

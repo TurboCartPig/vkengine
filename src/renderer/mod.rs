@@ -9,8 +9,7 @@ use self::{
     queues::{QueueFamilyIds, QueueFamilyTypes},
     shaders::ShaderSet,
 };
-use crate::components::Transform;
-use crate::resources::DeltaTime;
+use crate::{components::Transform, resources::DeltaTime};
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
