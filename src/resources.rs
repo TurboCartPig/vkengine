@@ -1,29 +1,29 @@
 use winit::VirtualKeyCode;
+use hibitset::BitSet;
 
 // TODO Use scancodes instead of virtual key codes
-// 170 is the number of variants as of winit 0.17.2
 pub struct Keyboard {
-    pressed: [bool; 170],
+    pressed: BitSet,
 }
 
 impl Keyboard {
     pub fn release(&mut self, key: VirtualKeyCode) {
-        self.pressed[key as usize] = false;
+        self.pressed.remove(key as u32);
     }
 
     pub fn press(&mut self, key: VirtualKeyCode) {
-        self.pressed[key as usize] = true;
+        self.pressed.add(key as u32);
     }
 
     pub fn pressed(&self, key: VirtualKeyCode) -> bool {
-        self.pressed[key as usize]
+        self.pressed.contains(key as u32)
     }
 }
 
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
-            pressed: [false; 170],
+            pressed: BitSet::new(),
         }
     }
 }

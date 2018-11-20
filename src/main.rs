@@ -2,6 +2,7 @@
 
 extern crate alga;
 extern crate float_duration;
+extern crate hibitset;
 extern crate genmesh;
 extern crate nalgebra as na;
 extern crate specs;
@@ -26,7 +27,6 @@ use self::{
     resources::{DeltaTime, Keyboard, Mouse, ShouldClose},
     systems::{TimeSystem, TransformSystem},
 };
-use na::{UnitQuaternion, Vector3};
 use specs::prelude::*;
 use winit::EventsLoop;
 
@@ -116,7 +116,7 @@ fn main() {
     let events_loop = EventsLoop::new();
     let renderer = Renderer::new(&events_loop);
     let events_loop_system = EventsLoopSystem::new(events_loop, renderer.surface());
-
+    
     // ECS World
     let mut world = World::new();
 
