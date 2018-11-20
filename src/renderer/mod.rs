@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod geometry;
+mod debug;
 mod queues;
 mod shaders;
 
@@ -7,6 +8,7 @@ use crate::{
     components::Transform,
     renderer::{
         camera::{ActiveCamera, Camera},
+        debug::Debug,
         geometry::MeshComponent,
         queues::{QueueFamilyIds, QueueFamilyTypes},
         shaders::ShaderSet,
@@ -32,7 +34,6 @@ use vulkano::{
     impl_vertex,
     instance::{
         self,
-        debug::{DebugCallback, MessageTypes},
         InstanceExtensions, PhysicalDevice, PhysicalDeviceType,
     },
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
@@ -76,7 +77,7 @@ pub struct Renderer {
     uniform_buffer_pool: CpuBufferPool<shaders::VertexInput>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
     previous_frame_end: Box<GpuFuture + Send + Sync>,
-    //_callback: Option<DebugCallback>,
+    _debug: Debug,
 }
 
 impl Renderer {
@@ -84,7 +85,7 @@ impl Renderer {
         let instance = new_instance();
 
         // We regiser the debug callback early in case something happens during init
-        //let _callback = register_debug_callback(instance.clone());
+        let _debug = Debug::from_instance(&instance);
 
         //let monitor = events_loop.get_primary_monitor();
 
@@ -148,7 +149,7 @@ impl Renderer {
             uniform_buffer_pool,
             descriptor_set_pool,
             previous_frame_end,
-            //_callback,
+            _debug,
         }
     }
 
@@ -361,26 +362,6 @@ impl<'a> System<'a> for Renderer {
     fn setup(&mut self, res: &mut Resources) {
         Self::SystemData::setup(res);
     }
-}
-
-// FIXME All MessageTypes are logged with warning
-#[allow(dead_code)]
-fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCallback> {
-    let message_types = MessageTypes {
-        error: true,
-        warning: true,
-        performance_warning: true,
-        information: false,
-        debug: true,
-    };
-
-    DebugCallback::new(&instance, message_types, |msg| {
-        warn!(
-            "Debug callback from {}: {}",
-            msg.layer_prefix, msg.description
-        );
-    })
-    .ok()
 }
 
 /// Creates a vulkan instance based on desired extensions and layers
