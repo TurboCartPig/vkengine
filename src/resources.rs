@@ -1,5 +1,5 @@
-use winit::VirtualKeyCode;
 use hibitset::BitSet;
+use winit::VirtualKeyCode;
 
 // TODO Use scancodes instead of virtual key codes
 pub struct Keyboard {

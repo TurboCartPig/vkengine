@@ -2,8 +2,8 @@
 
 extern crate alga;
 extern crate float_duration;
-extern crate hibitset;
 extern crate genmesh;
+extern crate hibitset;
 extern crate nalgebra as na;
 extern crate specs;
 extern crate specs_derive;
@@ -116,7 +116,7 @@ fn main() {
     let events_loop = EventsLoop::new();
     let renderer = Renderer::new(&events_loop);
     let events_loop_system = EventsLoopSystem::new(events_loop, renderer.surface());
-    
+
     // ECS World
     let mut world = World::new();
 
