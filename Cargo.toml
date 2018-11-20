@@ -17,6 +17,8 @@ vulkano-shaders = "0.11.0"
 
 float_duration = "0.3.3"
 hibitset = "0.5.2"
+log = "0.4.6"
+env_logger = "0.6.0"
 
 alga = "0.7.2"
 nalgebra = "0.16.10"

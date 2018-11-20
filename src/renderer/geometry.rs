@@ -6,6 +6,7 @@ use genmesh::{
     },
     EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
 };
+use log::info;
 use specs::{Component, DenseVecStorage};
 use specs_derive::Component;
 use std::{fmt::Debug, sync::Arc};
@@ -107,7 +108,7 @@ where
     G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
 {
     let vertices: Vec<_> = generator.shared_vertex_iter().collect();
-    println!("Shared vertices: {:?}", vertices.len());
+    info!("Shared vertices: {:?}", vertices.len());
 
     let vertices: Vec<_> = generator
         .indexed_polygon_iter()
@@ -134,7 +135,7 @@ where
         .map(|(v, _)| v)
         .collect();
 
-    println!("Shared vertices: {:?}", vertices.len());
+    info!("Shared vertices: {:?}", vertices.len());
     vertices
 }
 

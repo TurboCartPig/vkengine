@@ -101,6 +101,7 @@ fn main() {
     // The wayland backend for winit is in a pretty poor state as of now, so we use x11 instead
     std::env::set_var("WINIT_UNIX_BACKEND", "x11");
 
+    env_logger::init();
     let events_loop = EventsLoop::new();
     let renderer = Renderer::new(&events_loop);
     let events_loop_system = EventsLoopSystem::new(events_loop, renderer.surface());
@@ -160,7 +161,7 @@ fn main() {
         // .with(PrintSystem::default(), "print", &[])
         .with(TimeSystem::default(), "time", &[])
         .with(TransformSystem, "transform", &["time"])
-        .with(renderer, "renderer", &["time"])
+        .with(renderer, "renderer", &["time", "transform"])
         .with_barrier()
         .with_thread_local(events_loop_system)
         .build();

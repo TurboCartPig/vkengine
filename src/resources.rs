@@ -29,11 +29,18 @@ impl Default for Keyboard {
 }
 
 // TODO Add Mouse buttons
-// TODO Consider moving grabbed
+// TODO Consider making grabbed its own resource
 pub struct Mouse {
     pub move_delta: (f64, f64),
     pub scroll_delta: (f32, f32),
     pub grabbed: bool,
+}
+
+impl Mouse {
+    pub fn clear_deltas(&mut self) {
+        self.move_delta = (0.0, 0.0);
+        self.scroll_delta = (0.0, 0.0);
+    }
 }
 
 impl Default for Mouse {

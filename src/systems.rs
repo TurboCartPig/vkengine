@@ -68,7 +68,8 @@ impl<'a> System<'a> for TransformSystem {
         camera_t.rotate_local(UnitQuaternion::from_scaled_axis(Vector3::x() * pitch));
         camera_t.rotate_global(UnitQuaternion::from_scaled_axis(Vector3::y() * yaw));
 
-        *mouse = Mouse::default();
+        // Reset mouse input
+        mouse.clear_deltas();
 
         // Translation
         if keyboard.pressed(VirtualKeyCode::W) {

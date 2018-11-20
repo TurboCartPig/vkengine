@@ -3,13 +3,17 @@ pub mod geometry;
 mod queues;
 mod shaders;
 
-use self::{
-    camera::{ActiveCamera, Camera},
-    geometry::MeshComponent,
-    queues::{QueueFamilyIds, QueueFamilyTypes},
-    shaders::ShaderSet,
+use crate::{
+    components::Transform,
+    renderer::{
+        camera::{ActiveCamera, Camera},
+        geometry::MeshComponent,
+        queues::{QueueFamilyIds, QueueFamilyTypes},
+        shaders::ShaderSet,
+    },
+    resources::DeltaTime,
 };
-use crate::{components::Transform, resources::DeltaTime};
+use log::{error, info, log_enabled, warn, Level};
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
@@ -179,7 +183,7 @@ impl Renderer {
 
         self.recreate_framebuffers();
 
-        println!("INFO: Swapchain recreated");
+        warn!("Swapchain recreated");
         Ok(())
     }
 
@@ -228,7 +232,7 @@ impl<'a> System<'a> for Renderer {
                 Ok(ret) => ret,
                 // Can happen if the user has resized the window
                 Err(AcquireError::OutOfDate) => {
-                    println!("ERROR: Swapchain out of date");
+                    error!("Swapchain out of date");
                     self.recreate_swapchain().unwrap();
                     return;
                 }
@@ -340,12 +344,12 @@ impl<'a> System<'a> for Renderer {
         previous_frame_end = match present_future {
             Ok(future) => Box::new(future) as Box<_>,
             Err(FlushError::OutOfDate) => {
-                println!("ERROR: Swapchain out of date");
+                error!("Swapchain out of date");
                 self.recreate_swapchain().unwrap();
                 Box::new(sync::now(self.device.clone())) as Box<_>
             }
             Err(err) => {
-                println!("{:?}", err);
+                error!("{:?}", err);
                 Box::new(sync::now(self.device.clone())) as Box<_>
             }
         };
@@ -359,6 +363,7 @@ impl<'a> System<'a> for Renderer {
     }
 }
 
+// FIXME All MessageTypes are logged with warning
 #[allow(dead_code)]
 fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCallback> {
     let message_types = MessageTypes {
@@ -370,7 +375,7 @@ fn register_debug_callback(instance: Arc<instance::Instance>) -> Option<DebugCal
     };
 
     DebugCallback::new(&instance, message_types, |msg| {
-        println!(
+        warn!(
             "Debug callback from {}: {}",
             msg.layer_prefix, msg.description
         );
@@ -422,6 +427,8 @@ fn new_instance() -> Arc<instance::Instance> {
     };
 
     let layers = {
+        let available = instance::layers_list().unwrap().collect::<Vec<_>>();
+
         let desired = vec![
             //"VK_LAYER_LUNARG_api_dump",
             //"VK_LAYER_LUNARG_core_validation",
@@ -432,18 +439,26 @@ fn new_instance() -> Arc<instance::Instance> {
             //"VK_LAYER_LUNARG_screenshot",
             "VK_LAYER_LUNARG_standard_validation",
             //"VK_LAYER_LUNARG_vktrace",
-            "VK_LAYER_VALVE_steam_overlay",
+            //"VK_LAYER_VALVE_steam_overlay",
         ];
 
+        if log_enabled!(Level::Info) {
+            info!("Available instance layers:\n");
+            for layer in available.iter() {
+                info!(
+                    "Layer Name: {}\nLayer Version: {}\nLayer Description: {}\n",
+                    layer.name(),
+                    layer.implementation_version(),
+                    layer.description()
+                );
+            }
+        }
+
         // Panics if a desired layer is not available
-        for dlayer in desired.clone() {
-            let available = instance::layers_list().unwrap();
-
-            println!("Available instance layers");
-
+        for dlayer in desired.iter() {
             available
-                .inspect(|alayer| println!("\t{:?}", alayer.name()))
-                .find(|alayer| alayer.name() == dlayer)
+                .iter()
+                .find(|alayer| &alayer.name() == dlayer)
                 .expect("Failed to find desired validation layer");
         }
 
@@ -465,7 +480,7 @@ fn new_device_and_queues(
     surface: Surface,
 ) -> (Arc<Device>, queues::Queues) {
     let (physical, queue_family_ids) = {
-        println!("Listing enumerated devices...\n");
+        info!("Listing enumerated devices...\n");
 
         // TODO Tune scores
         let mut devices = PhysicalDevice::enumerate(&instance)
@@ -499,7 +514,7 @@ fn new_device_and_queues(
                 (device, score, queue_family_ids)
             })
             .inspect(|(device, score, _)| {
-                println!(
+                info!(
                     "\
                      Device name: {}\n\
                      Device type: {:?}\n\
@@ -522,7 +537,7 @@ fn new_device_and_queues(
         (physical, queue_family_ids)
     };
 
-    println!("Physical device chosen: {:?}\n", physical.name());
+    info!("Physical device chosen: {:?}\n", physical.name());
 
     let (queues, queue_types) = {
         let queues_count = physical.queue_families().len();
@@ -563,8 +578,8 @@ fn new_device_and_queues(
         (queues, queue_types)
     };
 
-    println!("Queues to be created: {:?}", queues.len());
-    println!("Queue types to be created: {:?}", queue_types);
+    info!("Queues to be created: {:?}", queues.len());
+    info!("Queue types to be created: {:?}", queue_types);
 
     let features = {
         // TODO: Check for minimum required features
@@ -660,7 +675,7 @@ fn new_swapchain_and_images(
         .capabilities(device.physical_device())
         .expect("Failed to get surface capabilities");
 
-    //println!("Surface capabilities: {:?}\n", capabilities);
+    //info!("Surface capabilities: {:?}\n", capabilities);
 
     let buffer_count = max(
         capabilities.min_image_count,
@@ -671,7 +686,7 @@ fn new_swapchain_and_images(
 
     // First available format
     let format = capabilities.supported_formats[0].0;
-    println!("Supported formats: {:?}", capabilities.supported_formats);
+    info!("Supported formats: {:?}", capabilities.supported_formats);
 
     // Current extent seems to be the screen res normaly
     // FIXME The dimensions dont match the inner window size
