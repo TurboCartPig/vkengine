@@ -43,4 +43,3 @@ impl Debug {
         Self { _callback }
     }
 }
-

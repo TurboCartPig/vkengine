@@ -1,7 +1,7 @@
 use crate::{
     components::{Link, Transform, TransformMatrix},
     renderer::camera::ActiveCamera,
-    resources::{Time, Keyboard, Mouse},
+    resources::{Keyboard, Mouse, Time},
 };
 use float_duration::TimePoint;
 use hibitset::BitSet;
@@ -177,10 +177,7 @@ impl<'a> System<'a> for FlyControlSystem {
         WriteStorage<'a, Transform>,
     );
 
-    fn run(
-        &mut self,
-        (keyboard, mut mouse, time, active_camera, mut transform): Self::SystemData,
-    ) {
+    fn run(&mut self, (keyboard, mut mouse, time, active_camera, mut transform): Self::SystemData) {
         // If mouse is not grabbed, then the window is not focused, and we sould not handle input
         if !mouse.grabbed {
             return;

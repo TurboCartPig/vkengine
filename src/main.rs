@@ -6,16 +6,14 @@ mod resources;
 mod systems;
 
 use crate::{
-    components::Transform,
-    components::TransformMatrix,
-    components::Link,
+    components::{Link, Transform, TransformMatrix},
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{MeshComponent, Shape},
         Renderer, Surface,
     },
-    resources::{Time, Keyboard, Mouse, ShouldClose},
-    systems::{TimeSystem, TransformSystem, FlyControlSystem},
+    resources::{Keyboard, Mouse, ShouldClose, Time},
+    systems::{FlyControlSystem, TimeSystem, TransformSystem},
 };
 use nalgebra::Vector3;
 use specs::prelude::*;
@@ -144,7 +142,10 @@ fn main() {
     //     ))
     //     .build();
 
-    let parent = world.create_entity().with(Transform::from(Vector3::new(1.0, 0.0, -10.0))).build();
+    let parent = world
+        .create_entity()
+        .with(Transform::from(Vector3::new(1.0, 0.0, -10.0)))
+        .build();
     // Cube
     world
         .create_entity()

@@ -11,14 +11,16 @@ pub struct TransformMatrix {
 
 impl From<Matrix4<f32>> for TransformMatrix {
     fn from(mat: Matrix4<f32>) -> Self {
-        Self {
-            mat,
-        }
+        Self { mat }
     }
 }
 
 impl Default for TransformMatrix {
-    fn default() -> Self { Self {mat: Matrix4::identity(), }}
+    fn default() -> Self {
+        Self {
+            mat: Matrix4::identity(),
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -1,12 +1,11 @@
 pub mod camera;
-pub mod geometry;
 mod debug;
+pub mod geometry;
 mod queues;
 mod shaders;
 
 use crate::{
-    components::Transform,
-    components::TransformMatrix,
+    components::{Transform, TransformMatrix},
     renderer::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
@@ -33,10 +32,7 @@ use vulkano::{
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
     image::{attachment::AttachmentImage, SwapchainImage},
     impl_vertex,
-    instance::{
-        self,
-        InstanceExtensions, PhysicalDevice, PhysicalDeviceType,
-    },
+    instance::{self, InstanceExtensions, PhysicalDevice, PhysicalDeviceType},
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     single_pass_renderpass,
     swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
@@ -221,7 +217,10 @@ impl<'a> System<'a> for Renderer {
         Read<'a, Time>,
     );
 
-    fn run(&mut self, (mesh, transform, transform_matrix, active_camera, mut camera, _time): Self::SystemData) {
+    fn run(
+        &mut self,
+        (mesh, transform, transform_matrix, active_camera, mut camera, _time): Self::SystemData,
+    ) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
@@ -423,7 +422,7 @@ fn new_instance() -> Arc<instance::Instance> {
             "VK_LAYER_LUNARG_standard_validation",
             //"VK_LAYER_LUNARG_vktrace",
             //"VK_LAYER_VALVE_steam_overlay",
-            "VK_LAYER_RENDERDOC_Capture"
+            "VK_LAYER_RENDERDOC_Capture",
         ];
 
         if log_enabled!(Level::Info) {
