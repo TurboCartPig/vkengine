@@ -1,11 +1,13 @@
 use crate::{
-    components::Transform,
+    components::{Link, Transform, TransformMatrix},
     renderer::camera::ActiveCamera,
     resources::{DeltaTime, Keyboard, Mouse},
 };
 use float_duration::TimePoint;
+use hibitset::BitSet;
 use nalgebra::{UnitQuaternion, Vector3};
 use specs::prelude::*;
+use specs_hierarchy::{Hierarchy, HierarchyEvent, Parent};
 use std::{mem, time::Instant};
 use winit::VirtualKeyCode;
 
@@ -39,9 +41,136 @@ impl<'a> System<'a> for TimeSystem {
     }
 }
 
-pub struct TransformSystem;
+/// Syncs Transform and TransformMatrix per entity
+///
+/// For every Transform, whether relative or absolute, there should be a TransformMatrix
+/// that contains the transform matrix for said Transform.
+pub struct TransformSystem {
+    dirty: BitSet,
+    transform_reader_id: Option<ReaderId<ComponentEvent>>,
+    hierarchy_reader_id: Option<ReaderId<HierarchyEvent>>,
+}
 
 impl<'a> System<'a> for TransformSystem {
+    type SystemData = (
+        Entities<'a>,
+        ReadExpect<'a, Hierarchy<Link>>,
+        ReadStorage<'a, Link>,
+        ReadStorage<'a, Transform>,
+        WriteStorage<'a, TransformMatrix>,
+    );
+
+    // TODO We clone 2 bitsets here, that is not optimal
+    fn run(&mut self, (entities, hierarchy, links, transforms, mut matrices): Self::SystemData) {
+        
+        // Add TransformMatrix component to all entities with Transforms
+        (&entities, &transforms, !matrices.mask().clone())
+            .join()
+            .for_each(|(entity, transform, _)| {
+                matrices
+                    .insert(entity, TransformMatrix::from(transform.to_matrix()))
+                    .unwrap();
+                self.dirty.add(entity.id());
+            });
+        
+        
+        // Read events
+        // Add new or modified entities to dirty bitset
+        transforms
+            .channel()
+            .read(self.transform_reader_id.as_mut().unwrap())
+            .for_each(|event| match *event {
+                ComponentEvent::Removed(_) => (),
+                ComponentEvent::Inserted(id) | ComponentEvent::Modified(id) => {
+                    self.dirty.add(id);
+                }
+            });
+
+        // If there are new or different parents, we need to resync
+        hierarchy
+            .changed()
+            .read(self.hierarchy_reader_id.as_mut().unwrap())
+            .for_each(|event| match *event {
+                HierarchyEvent::Removed(entity) => {
+                    let _ = entities.delete(entity);
+                }
+                HierarchyEvent::Modified(entity) => {
+                    self.dirty.add(entity.id());
+                }
+            });
+
+        // Children of dirty entities are also dirty and need their matrices synced
+        (&entities, &transforms, &matrices, &self.dirty.clone())
+            .join()
+            .for_each(|(entity, _, _, _)| {
+                let children = hierarchy.all_children(entity);
+                self.dirty |= &children;
+            });
+
+        // Sync all dirty entities and their children
+        (&entities, &transforms, &mut matrices, &self.dirty)
+            .join()
+            .for_each(|(entity, transform, matrix, _)| {
+                matrix.mat = transform.to_matrix();
+
+                let mut parent_entity = entity;
+                while let Some(link) = links.get(parent_entity) {
+                    parent_entity = link.parent_entity();
+                    println!("Hei");
+                    if let Some(p_trans) = transforms.get(parent_entity) {
+                        matrix.mat = p_trans.to_matrix() * matrix.mat;
+                        println!("Hei2");
+                    }
+                }
+            });
+
+        // Sync transforms without parents
+        // We join on self.dirty so we only sync transforms that are out of sync
+        // (&entities, &transforms, &mut matrices, &self.dirty, !&links)
+        //     .join()
+        //     .for_each(|(entity, transform, matrix, _, _)| {
+        //         matrix.mat = transform.to_matrix();
+        //     });
+
+        // Sync transforms with parents
+        // hierarchy.all().iter().for_each(|entity| {
+        //     let self_dirty = self.dirty.contains(entity.id());
+
+        // });
+
+        // (&entities, &links, &transforms, &mut matrices, &self.dirty).join().for_each(|(entity, link, transform, matrix, _)| {
+
+        // });
+
+        // Reset
+        self.dirty.clear();
+    }
+
+    fn setup(&mut self, res: &mut Resources) {
+        Self::SystemData::setup(res);
+
+        let mut transforms = WriteStorage::<Transform>::fetch(res);
+        let mut hierarchy = res.fetch_mut::<Hierarchy<Link>>();
+
+        self.transform_reader_id = Some(transforms.register_reader());
+        self.hierarchy_reader_id = Some(hierarchy.track());
+    }
+}
+
+impl Default for TransformSystem {
+    fn default() -> Self {
+        Self {
+            dirty: BitSet::new(),
+            transform_reader_id: None,
+            hierarchy_reader_id: None,
+        }
+    }
+}
+
+/// Fly control system
+pub struct FlyControlSystem;
+
+impl<'a> System<'a> for FlyControlSystem {
     type SystemData = (
         Read<'a, Keyboard>,
         Write<'a, Mouse>,
@@ -87,32 +216,5 @@ impl<'a> System<'a> for TransformSystem {
         if keyboard.pressed(VirtualKeyCode::D) {
             camera_t.translate_right(1.0 * delta_time.delta as f32);
         }
-    }
-}
-
-#[allow(dead_code)]
-pub struct PrintSystem {
-    counter: u32,
-}
-
-impl<'a> System<'a> for PrintSystem {
-    type SystemData = ReadStorage<'a, Transform>;
-
-    fn run(&mut self, transform: Self::SystemData) {
-        let freq = 60;
-        if self.counter == freq {
-            for t in transform.join() {
-                println!("Hello transform {:?}", t);
-            }
-            self.counter = 0;
-        } else {
-            self.counter += 1;
-        }
-    }
-}
-
-impl Default for PrintSystem {
-    fn default() -> Self {
-        Self { counter: 0 }
     }
 }

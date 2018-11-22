@@ -6,6 +6,7 @@ mod shaders;
 
 use crate::{
     components::Transform,
+    components::TransformMatrix,
     renderer::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
@@ -214,12 +215,13 @@ impl<'a> System<'a> for Renderer {
     type SystemData = (
         ReadStorage<'a, MeshComponent>,
         ReadStorage<'a, Transform>,
+        ReadStorage<'a, TransformMatrix>,
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Camera>,
         Read<'a, DeltaTime>,
     );
 
-    fn run(&mut self, (mesh, transform, active_camera, mut camera, _delta_time): Self::SystemData) {
+    fn run(&mut self, (mesh, transform, transform_matrix, active_camera, mut camera, _delta_time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
@@ -251,9 +253,9 @@ impl<'a> System<'a> for Renderer {
 
         let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
 
-        for (mesh, transform) in (&mesh, &transform).join() {
+        for (mesh, model) in (&mesh, &transform_matrix).join() {
             let uniform_buffer_subbuffer = {
-                let model = transform.to_matrix();
+                let model = model.mat;
 
                 let uniform_data = shaders::VertexInput {
                     view: view.into(),
@@ -421,6 +423,7 @@ fn new_instance() -> Arc<instance::Instance> {
             "VK_LAYER_LUNARG_standard_validation",
             //"VK_LAYER_LUNARG_vktrace",
             //"VK_LAYER_VALVE_steam_overlay",
+            "VK_LAYER_RENDERDOC_Capture"
         ];
 
         if log_enabled!(Level::Info) {

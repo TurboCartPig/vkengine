@@ -7,15 +7,19 @@ mod systems;
 
 use crate::{
     components::Transform,
+    components::TransformMatrix,
+    components::Link,
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{MeshComponent, Shape},
         Renderer, Surface,
     },
     resources::{DeltaTime, Keyboard, Mouse, ShouldClose},
-    systems::{TimeSystem, TransformSystem},
+    systems::{TimeSystem, TransformSystem, FlyControlSystem},
 };
+use nalgebra::Vector3;
 use specs::prelude::*;
+use specs_hierarchy::HierarchySystem;
 use winit::EventsLoop;
 
 //TODO Use a logger instead of println
@@ -110,7 +114,9 @@ fn main() {
     let mut world = World::new();
 
     // Register components
+    world.register::<Link>();
     world.register::<Transform>();
+    world.register::<TransformMatrix>();
     world.register::<MeshComponent>();
     world.register::<ActiveCamera>();
     world.register::<Camera>();
@@ -138,9 +144,11 @@ fn main() {
     //     ))
     //     .build();
 
+    let parent = world.create_entity().with(Transform::from(Vector3::new(1.0, 0.0, -10.0))).build();
     // Cube
     world
         .create_entity()
+        .with(Link::new(parent))
         .with(Transform::default())
         .with(MeshComponent::from_shape(
             renderer.device.clone(),
@@ -160,8 +168,10 @@ fn main() {
     let mut dispatcher = DispatcherBuilder::new()
         // .with(PrintSystem::default(), "print", &[])
         .with(TimeSystem::default(), "time", &[])
-        .with(TransformSystem, "transform", &["time"])
-        .with(renderer, "renderer", &["time", "transform"])
+        .with(HierarchySystem::<Link>::new(), "hierarchy", &[])
+        .with(TransformSystem::default(), "transform", &["hierarchy"])
+        .with(FlyControlSystem, "fly", &["time"])
+        .with(renderer, "renderer", &["time", "transform", "fly"])
         .with_barrier()
         .with_thread_local(events_loop_system)
         .build();

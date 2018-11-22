@@ -1,9 +1,27 @@
-use nalgebra::{zero, Isometry3, Matrix4, UnitQuaternion, Vector3};
+use nalgebra::{zero, Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
 use specs::prelude::*;
 use specs_derive::Component;
+use specs_hierarchy::Parent;
 
 #[derive(Component, Debug)]
 #[storage(VecStorage)]
+pub struct TransformMatrix {
+    pub mat: Matrix4<f32>,
+}
+
+impl From<Matrix4<f32>> for TransformMatrix {
+    fn from(mat: Matrix4<f32>) -> Self {
+        Self {
+            mat,
+        }
+    }
+}
+
+impl Default for TransformMatrix {
+    fn default() -> Self { Self {mat: Matrix4::identity(), }}
+}
+
+#[derive(Debug)]
 pub struct Transform {
     // Isometry: Translation and rotation
     pub iso: Isometry3<f32>,
@@ -31,28 +49,6 @@ impl Transform {
             .append_nonuniform_scaling(&inverse_scale)
     }
 
-    // pub fn to_fps_view_matrix(&self) -> Matrix4<f32> {
-    //     let (_, pitch, yaw) = self.rotation.euler_angles();
-
-    //     let cos_pitch = pitch.cos();
-    //     let sin_pitch = pitch.sin();
-    //     let cos_yaw = yaw.cos();
-    //     let sin_yaw = yaw.sin();
-
-    //     let eye = &self.position;
-
-    //     let xaxis = Vector3::new(cos_yaw, 0.0, -sin_yaw);
-    //     let yaxis = Vector3::new(sin_yaw * sin_pitch, cos_pitch, cos_yaw * sin_pitch);
-    //     let zaxis = Vector3::new(sin_yaw * cos_pitch, -sin_pitch, cos_pitch * cos_yaw);
-
-    //     Matrix4::from_columns(&[
-    //         Vector4::new(xaxis.x, yaxis.x, zaxis.x, 0.0),
-    //         Vector4::new(xaxis.y, yaxis.y, zaxis.y, 0.0),
-    //         Vector4::new(xaxis.z, yaxis.z, zaxis.z, 0.0),
-    //         Vector4::new(-xaxis.dot(eye), -yaxis.dot(eye), -zaxis.dot(eye), 1.0),
-    //     ])
-    // }
-
     pub fn translate(&mut self, t: Vector3<f32>) {
         // if t != zero() {
         self.iso.translation.vector += self.iso.rotation * t;
@@ -65,12 +61,12 @@ impl Transform {
         }
     }
 
-    pub fn translate_forward(&mut self, s: f32) {
-        self.translate(Vector3::new(0.0, 0.0, -s))
+    pub fn translate_forward(&mut self, scaler: f32) {
+        self.translate(Vector3::new(0.0, 0.0, -scaler))
     }
 
-    pub fn translate_right(&mut self, s: f32) {
-        self.translate(Vector3::new(s, 0.0, 0.0))
+    pub fn translate_right(&mut self, scaler: f32) {
+        self.translate(Vector3::new(scaler, 0.0, 0.0))
     }
 
     pub fn rotate_global(&mut self, r: UnitQuaternion<f32>) {
@@ -86,11 +82,54 @@ impl Transform {
     }
 }
 
+impl Component for Transform {
+    type Storage = FlaggedStorage<Self, VecStorage<Self>>;
+}
+
+impl Into<Matrix4<f32>> for Transform {
+    fn into(self) -> Matrix4<f32> {
+        self.to_matrix()
+    }
+}
+
+// New Transform with vector as translation
+impl From<Vector3<f32>> for Transform {
+    fn from(vector: Vector3<f32>) -> Self {
+        let mut iso = Isometry3::identity();
+        iso.append_translation_mut(&Translation3::from(vector));
+        Self {
+            iso,
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for Transform {
     fn default() -> Self {
         Transform {
             iso: Isometry3::identity(),
             scale: Vector3::new(1.0, 1.0, 1.0),
         }
+    }
+}
+
+/// Component defining a link in a hierarchy of components
+pub struct Link {
+    parent: Entity,
+}
+
+impl Component for Link {
+    type Storage = FlaggedStorage<Self, DenseVecStorage<Self>>;
+}
+
+impl Parent for Link {
+    fn parent_entity(&self) -> Entity {
+        self.parent
+    }
+}
+
+impl Link {
+    pub fn new(parent: Entity) -> Self {
+        Self { parent }
     }
 }
