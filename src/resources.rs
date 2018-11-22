@@ -53,14 +53,14 @@ impl Default for Mouse {
     }
 }
 
-pub struct DeltaTime {
+pub struct Time {
     pub delta: f64,
     pub first_frame: f64,
 }
 
-impl Default for DeltaTime {
+impl Default for Time {
     fn default() -> Self {
-        DeltaTime {
+        Self {
             delta: 1f64,
             first_frame: 0f64,
         }

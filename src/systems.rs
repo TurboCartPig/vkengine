@@ -1,7 +1,7 @@
 use crate::{
     components::{Link, Transform, TransformMatrix},
     renderer::camera::ActiveCamera,
-    resources::{DeltaTime, Keyboard, Mouse},
+    resources::{Time, Keyboard, Mouse},
 };
 use float_duration::TimePoint;
 use hibitset::BitSet;
@@ -26,16 +26,16 @@ impl Default for TimeSystem {
 }
 
 impl<'a> System<'a> for TimeSystem {
-    type SystemData = Write<'a, DeltaTime>;
+    type SystemData = Write<'a, Time>;
 
-    fn run(&mut self, mut delta_time: Self::SystemData) {
+    fn run(&mut self, mut time: Self::SystemData) {
         let now = Instant::now();
 
         let delta = now.float_duration_since(self.last_frame).unwrap();
-        delta_time.delta = delta.as_seconds();
+        time.delta = delta.as_seconds();
 
         let first_frame = now.float_duration_since(self.first_frame).unwrap();
-        delta_time.first_frame = first_frame.as_seconds();
+        time.first_frame = first_frame.as_seconds();
 
         mem::replace(&mut self.last_frame, now);
     }
@@ -62,7 +62,6 @@ impl<'a> System<'a> for TransformSystem {
 
     // TODO We clone 2 bitsets here, that is not optimal
     fn run(&mut self, (entities, hierarchy, links, transforms, mut matrices): Self::SystemData) {
-        
         // Add TransformMatrix component to all entities with Transforms
         (&entities, &transforms, !matrices.mask().clone())
             .join()
@@ -72,8 +71,7 @@ impl<'a> System<'a> for TransformSystem {
                     .unwrap();
                 self.dirty.add(entity.id());
             });
-        
-        
+
         // Read events
         // Add new or modified entities to dirty bitset
         transforms
@@ -174,14 +172,14 @@ impl<'a> System<'a> for FlyControlSystem {
     type SystemData = (
         Read<'a, Keyboard>,
         Write<'a, Mouse>,
-        Read<'a, DeltaTime>,
+        Read<'a, Time>,
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Transform>,
     );
 
     fn run(
         &mut self,
-        (keyboard, mut mouse, delta_time, active_camera, mut transform): Self::SystemData,
+        (keyboard, mut mouse, time, active_camera, mut transform): Self::SystemData,
     ) {
         // If mouse is not grabbed, then the window is not focused, and we sould not handle input
         if !mouse.grabbed {
@@ -202,19 +200,19 @@ impl<'a> System<'a> for FlyControlSystem {
 
         // Translation
         if keyboard.pressed(VirtualKeyCode::W) {
-            camera_t.translate_forward(1.0 * delta_time.delta as f32);
+            camera_t.translate_forward(1.0 * time.delta as f32);
         }
 
         if keyboard.pressed(VirtualKeyCode::S) {
-            camera_t.translate_forward(-1.0 * delta_time.delta as f32);
+            camera_t.translate_forward(-1.0 * time.delta as f32);
         }
 
         if keyboard.pressed(VirtualKeyCode::A) {
-            camera_t.translate_right(-1.0 * delta_time.delta as f32);
+            camera_t.translate_right(-1.0 * time.delta as f32);
         }
 
         if keyboard.pressed(VirtualKeyCode::D) {
-            camera_t.translate_right(1.0 * delta_time.delta as f32);
+            camera_t.translate_right(1.0 * time.delta as f32);
         }
     }
 }

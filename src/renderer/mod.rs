@@ -14,7 +14,7 @@ use crate::{
         queues::{QueueFamilyIds, QueueFamilyTypes},
         shaders::ShaderSet,
     },
-    resources::DeltaTime,
+    resources::Time,
 };
 use log::{error, info, log_enabled, warn, Level};
 use specs::prelude::*;
@@ -218,10 +218,10 @@ impl<'a> System<'a> for Renderer {
         ReadStorage<'a, TransformMatrix>,
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Camera>,
-        Read<'a, DeltaTime>,
+        Read<'a, Time>,
     );
 
-    fn run(&mut self, (mesh, transform, transform_matrix, active_camera, mut camera, _delta_time): Self::SystemData) {
+    fn run(&mut self, (mesh, transform, transform_matrix, active_camera, mut camera, _time): Self::SystemData) {
         self.previous_frame_end.cleanup_finished();
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame

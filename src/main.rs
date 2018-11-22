@@ -14,7 +14,7 @@ use crate::{
         geometry::{MeshComponent, Shape},
         Renderer, Surface,
     },
-    resources::{DeltaTime, Keyboard, Mouse, ShouldClose},
+    resources::{Time, Keyboard, Mouse, ShouldClose},
     systems::{TimeSystem, TransformSystem, FlyControlSystem},
 };
 use nalgebra::Vector3;
@@ -122,7 +122,7 @@ fn main() {
     world.register::<Camera>();
 
     // Add resources
-    world.add_resource(DeltaTime::default());
+    world.add_resource(Time::default());
     world.add_resource(ShouldClose::default());
     world.add_resource(Keyboard::default());
     world.add_resource(Mouse::default());
