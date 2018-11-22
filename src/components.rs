@@ -4,7 +4,7 @@ use specs_derive::Component;
 use specs_hierarchy::Parent;
 
 /// Absolute transform matrix
-#[derive(Component, Copy, Clone, Debug)]
+#[derive(Component, Clone, Debug, PartialEq)]
 #[storage(VecStorage)]
 pub struct TransformMatrix {
     pub mat: Matrix4<f32>,
@@ -25,7 +25,7 @@ impl Default for TransformMatrix {
 }
 
 /// Transform (translation, rotation, scale)
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Transform {
     // Isometry: Translation and rotation
     pub iso: Isometry3<f32>,

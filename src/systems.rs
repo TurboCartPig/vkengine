@@ -11,6 +11,7 @@ use specs_hierarchy::{Hierarchy, HierarchyEvent, Parent};
 use std::{mem, time::Instant};
 use winit::VirtualKeyCode;
 
+/// A System for updating the Time resource in order to expose things like delta time
 pub struct TimeSystem {
     first_frame: Instant,
     last_frame: Instant,
@@ -211,5 +212,95 @@ impl<'a> System<'a> for FlyControlSystem {
         if keyboard.pressed(VirtualKeyCode::D) {
             camera_t.translate_right(1.0 * time.delta as f32);
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        components::{Link, Transform, TransformMatrix},
+        systems::TransformSystem,
+    };
+    use nalgebra::Vector3;
+    use specs::prelude::*;
+    use specs_hierarchy::HierarchySystem;
+
+    fn world<'a, 'b>() -> (World, Dispatcher<'a, 'b>) {
+        let mut world = World::new();
+        let hierarchy_sys = HierarchySystem::<Link>::new();
+        let transform_sys = TransformSystem::default();
+
+        world.register::<Transform>();
+        world.register::<TransformMatrix>();
+        world.register::<Link>();
+
+        let mut dispatcher = DispatcherBuilder::new()
+            .with(hierarchy_sys, "hs", &[])
+            .with(transform_sys, "ts", &["hs"])
+            .build();
+
+        dispatcher.setup(&mut world.res);
+
+        (world, dispatcher)
+    }
+
+    // Test if TransformMatrix is inserted and synced
+    #[test]
+    fn basic() {
+        let (mut world, mut dispatcher) = world();
+
+        let tra = Transform::from(Vector3::new(5.9, 3.9, 1.0));
+        let e1 = world.create_entity().with(tra.clone()).build();
+
+        dispatcher.dispatch(&world.res);
+
+        let sys_mat = world
+            .read_storage::<TransformMatrix>()
+            .get(e1)
+            .unwrap()
+            .clone()
+            .mat;
+        let tra_mat = tra.to_matrix();
+
+        assert_eq!(sys_mat, tra_mat);
+    }
+
+    // Test if matrix is synced even if parent is after child
+    #[test]
+    fn complex() {
+        let (mut world, mut dispatcher) = world();
+
+        let tra = Transform::from(Vector3::new(5.9, 3.9, 1.0));
+        let e1 = world.create_entity().with(tra.clone()).build();
+
+        let e2 = world.create_entity().with(tra.clone()).build();
+
+        {
+            let mut links = world.write_storage::<Link>();
+            links.insert(e1, Link::new(e2)).unwrap();
+        }
+
+        world.maintain();
+
+        dispatcher.dispatch(&world.res);
+
+        let abs_tra_e1 = world
+            .read_storage::<TransformMatrix>()
+            .get(e1)
+            .unwrap()
+            .mat
+            .clone();
+        let abs_tra_e2 = world
+            .read_storage::<TransformMatrix>()
+            .get(e2)
+            .unwrap()
+            .mat
+            .clone();
+        let abs_tra = tra.to_matrix() * tra.to_matrix();
+
+        // The absolute matricies should no longer be equal
+        assert_ne!(abs_tra_e1, abs_tra_e2);
+        // Actual result should be the same as simulated result
+        assert_eq!(abs_tra_e1, abs_tra);
     }
 }

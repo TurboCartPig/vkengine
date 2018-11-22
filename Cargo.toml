@@ -31,3 +31,6 @@ genmesh = "0.6.2"
 specs = "0.14.0"
 specs-derive = "0.3.0"
 specs-hierarchy = "0.3.0"
+
+[profile.release]
+lto = true

@@ -1,6 +1,7 @@
 pub mod camera;
-mod debug;
 pub mod geometry;
+
+mod debug;
 mod queues;
 mod shaders;
 
@@ -41,6 +42,7 @@ use vulkano::{
 use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
 
+/// The surface the user sees inside the main window
 pub type Surface = Arc<swapchain::Surface<Window>>;
 
 #[derive(Debug, Clone, PartialEq)]

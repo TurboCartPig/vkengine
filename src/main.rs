@@ -26,6 +26,7 @@ use winit::EventsLoop;
 //TODO Fix/Impl lighting
 //TODO Fix all tranformations and matrix math
 
+/// Turns raw events from the os into data in the ecs world
 struct EventsLoopSystem {
     events_loop: EventsLoop,
     surface: Surface,
