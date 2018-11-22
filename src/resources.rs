@@ -1,6 +1,7 @@
 use hibitset::BitSet;
 use winit::VirtualKeyCode;
 
+/// Resource for keeping track of which keys are pressed
 // TODO Use scancodes instead of virtual key codes
 pub struct Keyboard {
     pressed: BitSet,
@@ -28,6 +29,7 @@ impl Default for Keyboard {
     }
 }
 
+/// Resource for keeping track of movement deltas and button states of a mouse
 // TODO Add Mouse buttons
 // TODO Consider making grabbed its own resource
 pub struct Mouse {
@@ -53,6 +55,7 @@ impl Default for Mouse {
     }
 }
 
+/// Resource for accessing delta time
 pub struct Time {
     pub delta: f64,
     pub first_frame: f64,
@@ -67,6 +70,7 @@ impl Default for Time {
     }
 }
 
+/// Resource for signaling that the user has asked to close the game
 pub struct ShouldClose(pub bool);
 
 impl Default for ShouldClose {

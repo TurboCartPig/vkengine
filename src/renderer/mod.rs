@@ -51,6 +51,7 @@ pub struct Vertex {
 
 impl_vertex!(Vertex, position, normal);
 
+/// The main renderer
 pub struct Renderer {
     pub device: Arc<Device>,
     queues: queues::Queues,
@@ -154,6 +155,7 @@ impl Renderer {
         self.surface.clone()
     }
 
+    /// Recreates the swapchain inplace, in case is is invalid
     fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
         let dimensions = self
             .surface
@@ -185,6 +187,7 @@ impl Renderer {
         Ok(())
     }
 
+    /// Recreates the framebuffers backing the swapchain images inplace
     fn recreate_framebuffers(&mut self) {
         let new_framebuffers = Some(
             self.images
@@ -217,6 +220,7 @@ impl<'a> System<'a> for Renderer {
         Read<'a, Time>,
     );
 
+    /// The main draw/render function
     fn run(
         &mut self,
         (mesh, transform, transform_matrix, active_camera, mut camera, _time): Self::SystemData,
@@ -358,10 +362,6 @@ impl<'a> System<'a> for Renderer {
 
         // Store the GpuFuture in Renderer again
         mem::replace(&mut self.previous_frame_end, previous_frame_end);
-    }
-
-    fn setup(&mut self, res: &mut Resources) {
-        Self::SystemData::setup(res);
     }
 }
 

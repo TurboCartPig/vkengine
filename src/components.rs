@@ -3,7 +3,8 @@ use specs::prelude::*;
 use specs_derive::Component;
 use specs_hierarchy::Parent;
 
-#[derive(Component, Debug)]
+/// Absolute transform matrix
+#[derive(Component, Copy, Clone, Debug)]
 #[storage(VecStorage)]
 pub struct TransformMatrix {
     pub mat: Matrix4<f32>,
@@ -23,6 +24,7 @@ impl Default for TransformMatrix {
     }
 }
 
+/// Transform (translation, rotation, scale)
 #[derive(Debug)]
 pub struct Transform {
     // Isometry: Translation and rotation
@@ -94,7 +96,6 @@ impl Into<Matrix4<f32>> for Transform {
     }
 }
 
-// New Transform with vector as translation
 impl From<Vector3<f32>> for Transform {
     fn from(vector: Vector3<f32>) -> Self {
         let mut iso = Isometry3::identity();
@@ -116,8 +117,15 @@ impl Default for Transform {
 }
 
 /// Component defining a link in a hierarchy of components
+#[derive(Debug, Copy, Clone)]
 pub struct Link {
     parent: Entity,
+}
+
+impl Link {
+    pub fn new(parent: Entity) -> Self {
+        Self { parent }
+    }
 }
 
 impl Component for Link {
@@ -130,8 +138,3 @@ impl Parent for Link {
     }
 }
 
-impl Link {
-    pub fn new(parent: Entity) -> Self {
-        Self { parent }
-    }
-}
