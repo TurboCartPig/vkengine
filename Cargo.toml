@@ -7,30 +7,32 @@ edition = "2018"
 [dependencies]
 winit = "0.18.0"
 vulkano = "0.11.1"
-vulkano-win = "0.11.0"
-vulkano-shaders = "0.11.0"
-#vulkano-shaders = { path = "../vulkano/vulkano-shaders" }
-#vulkano-shader-derive = "0.10.0"
-#vulkano = { path = "../vulkano/vulkano" }
-#vulkano-shader-derive = { path = "../vulkano/vulkano-shader-derive" }
-#vulkano-win = { path = "../vulkano/vulkano-win" }
+vulkano-win = "0.11.1"
+vulkano-shaders = "0.11.1"
+# vulkano = { path = "../vulkano/vulkano" }
+# vulkano-win = { path = "../vulkano/vulkano-win" }
+# vulkano-shaders = { path = "../vulkano/vulkano-shaders" }
 
 float_duration = "0.3.3"
-hibitset = "0.5.2"
+hibitset = "0.5.3"
+gilrs = "0.6.1"
+input = { path = "../input" }
+
 log = "0.4.6"
 env_logger = "0.6.0"
 
 alga = "0.7.2"
-nalgebra = "0.16.10"
+nalgebra = "0.16.11"
 #ncollide3d = "*"
 #nphysics3d = "*"
 
 #glft = "*"
 genmesh = "0.6.2"
 
-specs = "0.14.0"
+specs = "0.14.1"
 specs-derive = "0.3.0"
 specs-hierarchy = "0.3.0"
+fixedbitset = "0.1.9"
 
 [profile.release]
 lto = true

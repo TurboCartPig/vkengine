@@ -41,6 +41,7 @@ use vulkano::{
 };
 use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
+use winit::dpi::LogicalSize;
 
 /// The surface the user sees inside the main window
 pub type Surface = Arc<swapchain::Surface<Window>>;
@@ -93,7 +94,7 @@ impl Renderer {
             .with_title("VK Engine")
             //.with_maximized(true)
             //.with_fullscreen(Some(monitor))
-            //.with_dimensions()
+            .with_dimensions(LogicalSize::new(1600., 900.))
             .build_vk_surface(events_loop, instance.clone())
             .unwrap();
 

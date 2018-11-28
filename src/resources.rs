@@ -1,30 +1,35 @@
-use hibitset::BitSet;
+use fixedbitset::FixedBitSet;
+use gilrs::Button;
+use nalgebra::{clamp, Vector2};
 use winit::VirtualKeyCode;
 
 /// Resource for keeping track of which keys are pressed
-// TODO Use scancodes instead of virtual key codes
+///
+/// # Panics
+///
+/// - If the key as u32 > pressed.len()
 pub struct Keyboard {
-    pressed: BitSet,
+    pressed: FixedBitSet,
 }
 
 impl Keyboard {
     pub fn release(&mut self, key: VirtualKeyCode) {
-        self.pressed.remove(key as u32);
+        self.pressed.set(key as usize, false);
     }
 
     pub fn press(&mut self, key: VirtualKeyCode) {
-        self.pressed.add(key as u32);
+        self.pressed.set(key as usize, true);
     }
 
     pub fn pressed(&self, key: VirtualKeyCode) -> bool {
-        self.pressed.contains(key as u32)
+        self.pressed.contains(key as usize)
     }
 }
 
 impl Default for Keyboard {
     fn default() -> Self {
         Self {
-            pressed: BitSet::new(),
+            pressed: FixedBitSet::with_capacity(VirtualKeyCode::Cut as usize),
         }
     }
 }
@@ -51,6 +56,73 @@ impl Default for Mouse {
             move_delta: (0.0, 0.0),
             scroll_delta: (0.0, 0.0),
             grabbed: true,
+        }
+    }
+}
+
+/// Linear scale between 1 and -1
+#[derive(Default, Debug)]
+pub struct Axis {
+    value: f32,
+}
+
+impl Axis {
+    pub fn delta(&mut self, delta: f32) {
+        // self.value = clamp(self.value + delta, -1., 1.);
+        self.value = clamp(delta, -1., 1.);
+        // println!("Axis value: {}", self.value);
+    }
+
+    pub fn value(&self) -> f32 {
+        self.value
+    }
+}
+
+/// A stick is two axis
+#[derive(Default, Debug)]
+pub struct Stick {
+    pub x: Axis,
+    pub y: Axis,
+}
+
+impl Stick {
+    pub fn to_vector(&self) -> Vector2<f32> {
+        Vector2::new(self.x.value(), self.y.value()).normalize()
+    }
+}
+
+/// Generic gamepad
+pub struct Gamepad {
+    pub left: Stick,
+    pub right: Stick,
+    pub lbumper: Axis,
+    pub rbumper: Axis,
+    buttons: FixedBitSet,
+}
+
+impl Gamepad {
+    pub fn pressed(&self, button: Button) -> bool {
+        self.buttons.contains(button as usize)
+    }
+
+    pub fn press(&mut self, button: Button) {
+        self.buttons.set(button as usize, true);
+    }
+
+    pub fn release(&mut self, button: Button) {
+        self.buttons.set(button as usize, false);
+    }
+}
+
+// FIXME Hardcoded capacity
+impl Default for Gamepad {
+    fn default() -> Self {
+        Self {
+            left: Stick::default(),
+            right: Stick::default(),
+            lbumper: Axis::default(),
+            rbumper: Axis::default(),
+            buttons: FixedBitSet::with_capacity(20usize),
         }
     }
 }
