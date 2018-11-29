@@ -10,161 +10,207 @@ use crate::{
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{MeshComponent, Shape},
-        Renderer, Surface,
+        Renderer,
     },
-    resources::{Gamepad, Keyboard, Mouse, ShouldClose, Time},
+    resources::{FocusGained, Keyboard, Mouse, ShouldClose, Time},
     systems::{FlyControlSystem, TimeSystem, TransformSystem},
 };
-use gilrs::Gilrs;
 use log::{info, warn};
 use nalgebra::Vector3;
 use specs::prelude::*;
 use specs_hierarchy::HierarchySystem;
-use winit::EventsLoop;
-#[cfg(target_os = "windows")]
-use input::platform::xinput::Device;
 
 //TODO Mesh loading
 //TODO Use glyph-brush insted of vulkano_text
 //TODO Fix/Impl lighting
 
-/// Turns raw events from the os into data in the ecs world
-struct RawEventSystem {
-    events_loop: EventsLoop,
-    surface: Surface,
-    gilrs: Gilrs,
+use crate::renderer::Surface;
+use sdl2::{
+    controller::GameController,
+    event::{Event, WindowEvent},
+    video::{Window, WindowContext, FullscreenType},
+    keyboard::Keycode,
+    EventPump, GameControllerSubsystem, Sdl, VideoSubsystem,
+};
+use std::{rc::Rc, sync::Arc, thread};
+use vulkano::{instance::Instance, swapchain, VulkanObject};
+
+pub struct SendWindowContext {
+    _context: Rc<WindowContext>,
+    id: thread::ThreadId,
 }
 
-impl RawEventSystem {
-    pub fn new(events_loop: EventsLoop, surface: Surface) -> Self {
-        RawEventSystem {
-            events_loop,
-            surface,
-            gilrs: Gilrs::new().expect("Failed to create gilrs object"),
+unsafe impl Send for SendWindowContext {}
+unsafe impl Sync for SendWindowContext {}
+
+impl SendWindowContext {
+    pub fn new(_context: Rc<WindowContext>) -> Self {
+        Self {
+            _context,
+            id: thread::current().id(),
         }
     }
 }
 
-impl<'a> System<'a> for RawEventSystem {
+impl Drop for SendWindowContext {
+    fn drop(&mut self) {
+        if thread::current().id() != self.id {
+            unreachable!("Drop called from wrong thread");
+        }
+    }
+}
+
+pub trait VulkanoWindow {
+    fn vulkano_surface(&self, instance: Arc<Instance>) -> Surface;
+}
+
+impl VulkanoWindow for Window {
+    fn vulkano_surface(&self, instance: Arc<Instance>) -> Surface {
+        let raw = unsafe {
+            let handle = self
+                .vulkan_create_surface(instance.internal_object())
+                .unwrap();
+            swapchain::Surface::from_raw_surface(
+                instance,
+                handle,
+                SendWindowContext::new(self.context()),
+            )
+        };
+        Arc::new(raw)
+    }
+}
+
+struct SDLSystem {
+    context: Sdl,
+    window: Window,
+    video_subsystem: VideoSubsystem,
+    controller_subsystem: GameControllerSubsystem,
+    controllers: Vec<GameController>,
+    event_pump: EventPump,
+}
+
+impl SDLSystem {
+    pub fn new() -> Self {
+        let context = sdl2::init().unwrap();
+        let video_subsystem = context.video().unwrap();
+        let controller_subsystem = context.game_controller().unwrap();
+        let event_pump = context.event_pump().unwrap();
+
+        context.mouse().set_relative_mouse_mode(true);
+
+        let window = video_subsystem
+            .window("vkengine", 1600, 900)
+            .resizable()
+            .position_centered()
+            .input_grabbed()
+            .allow_highdpi()
+            .vulkan()
+            .build()
+            .unwrap();
+
+        let controllers = Vec::new();
+        Self {
+            context,
+            window,
+            video_subsystem,
+            controller_subsystem,
+            controllers,
+            event_pump,
+        }
+    }
+
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+}
+
+impl<'a> System<'a> for SDLSystem {
     type SystemData = (
         Write<'a, ShouldClose>,
+        Write<'a, FocusGained>,
         Write<'a, Keyboard>,
         Write<'a, Mouse>,
-        Write<'a, Gamepad>,
     );
 
-    fn run(&mut self, (mut should_close, mut keyboard, mut mouse, mut gamepad): Self::SystemData) {
-        let window = self.surface.window();
+    fn run(
+        &mut self,
+        (mut should_close, mut window_focus, mut keyboard, mut mouse): Self::SystemData,
+    ) {
+        // Reset
+        mouse.clear_deltas();
 
-        // Winit event handeling
-        self.events_loop.poll_events(|event| {
-            use winit::{
-                DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, MouseScrollDelta,
-                WindowEvent,
-            };
+        let mouse_util = &self.context.mouse();
 
+        for event in self.event_pump.poll_iter() {
             match event {
-                Event::WindowEvent {
-                    window_id: _,
-                    event,
-                } => match event {
-                    WindowEvent::CloseRequested => should_close.0 = true,
-                    WindowEvent::Destroyed => should_close.0 = true,
-                    WindowEvent::Focused(grabbed) => {
-                        mouse.grabbed = grabbed;
-                        window.grab_cursor(grabbed).unwrap();
-                        window.hide_cursor(grabbed);
+                Event::Quit { .. } => should_close.0 = true,
+                Event::Window { win_event, .. } => match win_event {
+                    WindowEvent::FocusGained => {
+                        window_focus.0 = true;
+                        mouse_util.capture(true);
+                        mouse_util.show_cursor(false);
+                    }
+                    WindowEvent::FocusLost => {
+                        window_focus.0 = false;
+                        mouse_util.capture(false);
+                        mouse_util.show_cursor(true);
+
+                        mouse.clear_all();
+                        keyboard.clear_all();
                     }
                     _ => (),
                 },
-                Event::DeviceEvent {
-                    device_id: _,
-                    event,
-                } => match event {
-                    DeviceEvent::MouseMotion { delta } => {
-                        mouse.move_delta.0 += delta.0;
-                        mouse.move_delta.1 += delta.1;
-                    }
-                    DeviceEvent::MouseWheel {
-                        delta: MouseScrollDelta::LineDelta(x, y),
-                    } => mouse.scroll_delta = (x, y),
-                    DeviceEvent::Key(KeyboardInput {
-                        state,
-                        virtual_keycode: Some(key),
-                        ..
-                    }) => {
-                        match state {
-                            ElementState::Pressed => keyboard.press(key),
-                            ElementState::Released => keyboard.release(key),
-                        };
-                    }
-                    _ => (),
-                },
+                Event::MouseMotion {
+                    x, y, xrel, yrel, ..
+                } => {
+                    mouse.absolute = (x, y);
+                    mouse.delta = (xrel, yrel);
+                }
+                Event::MouseButtonDown { mouse_btn, .. } => {
+                    mouse.set_pressed(mouse_btn, true);
+                }
+                Event::MouseButtonUp { mouse_btn, .. } => {
+                    mouse.set_pressed(mouse_btn, false);
+                }
+                Event::KeyDown { keycode: Some(Keycode::Q), .. } => {
+                    should_close.0 = true;
+                }
+                Event::KeyDown { keycode: Some(Keycode::F), .. } => {
+                    self.window.set_fullscreen(FullscreenType::Desktop).unwrap();
+                }
+                Event::KeyDown {
+                    keycode: Some(key), ..
+                } => {
+                    keyboard.set_pressed(key, true);
+                }
+                Event::KeyUp {
+                    keycode: Some(key), ..
+                } => {
+                    keyboard.set_pressed(key, false);
+                }
+                Event::ControllerDeviceAdded { which, .. } => {
+                    let name = self.controller_subsystem.name_for_index(which).unwrap();
+                    info!("Found game controller: {}", name);
+
+                    let controller = self.controller_subsystem.open(which).unwrap();
+                    self.controllers.push(controller);
+                }
+                Event::ControllerDeviceRemoved { which, .. } => {
+                    // Find index of controller to remove
+                    let idx = self.controllers.iter().enumerate().find(|(_, c)| c.instance_id() == which).map(|(idx, _)| idx).unwrap();
+                    self.controllers.remove(idx);
+                }
                 _ => (),
             }
-        });
-
-        // Gilrs event handeling
-        {
-            use gilrs::{Axis, Event, EventType};
-
-            while let Some(event) = self.gilrs.next_event() {
-                match event {
-                    Event {
-                        event: EventType::Disconnected,
-                        ..
-                    } => {
-                        warn!("Gamepad disconnected");
-                    }
-                    Event {
-                        event: EventType::Connected,
-                        ..
-                    } => {
-                        info!("Gamepad connected");
-                    }
-                    Event {
-                        event: EventType::ButtonPressed(button, _),
-                        ..
-                    } => {
-                        gamepad.press(button);
-                    }
-                    Event {
-                        event: EventType::ButtonReleased(button, _),
-                        ..
-                    } => {
-                        gamepad.release(button);
-                    }
-                    Event {
-                        event: EventType::AxisChanged(axis, delta, _),
-                        ..
-                    } => match axis {
-                        Axis::LeftStickX => gamepad.left.x.delta(delta),
-                        Axis::LeftStickY => gamepad.left.y.delta(delta),
-                        Axis::RightStickX => gamepad.right.x.delta(delta),
-                        Axis::RightStickY => gamepad.right.y.delta(delta),
-                        Axis::LeftZ => gamepad.lbumper.delta(delta),
-                        Axis::RightZ => gamepad.rbumper.delta(delta),
-                        Axis::DPadX => {}
-                        Axis::DPadY => {}
-                        Axis::Unknown => {}
-                    },
-                    _ => (),
-                }
-            }
-
-            self.gilrs.inc();
         }
     }
 }
 
 fn main() {
-    // The wayland backend for winit is in a pretty poor state as of now, so we use x11 instead
-    std::env::set_var("WINIT_UNIX_BACKEND", "x11");
-
     env_logger::init();
-    let events_loop = EventsLoop::new();
-    let renderer = Renderer::new(&events_loop);
-    let events_loop_system = RawEventSystem::new(events_loop, renderer.surface());
+
+    let sdl = SDLSystem::new();
+    let renderer = Renderer::new(sdl.window());
 
     // ECS World
     let mut world = World::new();
@@ -180,10 +226,6 @@ fn main() {
     // Add resources
     world.add_resource(Time::default());
     world.add_resource(ShouldClose::default());
-    world.add_resource(Keyboard::default());
-    world.add_resource(Mouse::default());
-    world.add_resource(Gamepad::default());
-    world.add_resource(Device::new(0, None));
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
@@ -234,7 +276,7 @@ fn main() {
         .with(FlyControlSystem, "fly", &["time"])
         .with(renderer, "renderer", &["time", "transform", "fly"])
         .with_barrier()
-        .with_thread_local(events_loop_system)
+        .with_thread_local(sdl)
         .build();
 
     // Setup the systems

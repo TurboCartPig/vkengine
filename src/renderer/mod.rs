@@ -15,8 +15,10 @@ use crate::{
         shaders::ShaderSet,
     },
     resources::Time,
+    SendWindowContext, VulkanoWindow,
 };
 use log::{error, info, log_enabled, warn, Level};
+use sdl2::video::Window as SdlWindow;
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
@@ -39,11 +41,8 @@ use vulkano::{
     swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
     sync::{self, FlushError, GpuFuture},
 };
-use vulkano_win::VkSurfaceBuild;
-use winit::{EventsLoop, Window, WindowBuilder};
-use winit::dpi::LogicalSize;
 
-/// The surface the user sees inside the main window
+pub type Window = SendWindowContext;
 pub type Surface = Arc<swapchain::Surface<Window>>;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -82,21 +81,13 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(events_loop: &EventsLoop) -> Self {
+    pub fn new(window: &SdlWindow) -> Self {
         let instance = new_instance();
 
         // We regiser the debug callback early in case something happens during init
         let _debug = Debug::from_instance(&instance);
 
-        //let monitor = events_loop.get_primary_monitor();
-
-        let surface = WindowBuilder::new()
-            .with_title("VK Engine")
-            //.with_maximized(true)
-            //.with_fullscreen(Some(monitor))
-            .with_dimensions(LogicalSize::new(1600., 900.))
-            .build_vk_surface(events_loop, instance.clone())
-            .unwrap();
+        let surface = window.vulkano_surface(instance.clone()).clone();
 
         let (device, queues) = new_device_and_queues(instance.clone(), surface.clone());
 
@@ -152,10 +143,6 @@ impl Renderer {
             previous_frame_end,
             _debug,
         }
-    }
-
-    pub fn surface(&self) -> Surface {
-        self.surface.clone()
     }
 
     /// Recreates the swapchain inplace, in case is is invalid

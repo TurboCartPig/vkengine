@@ -22,7 +22,7 @@ impl ShaderSet {
 mod vertex {
     use vulkano_shaders::shader;
 
-    shader!{
+    shader! {
         ty: "vertex",
         path: "shaders/basic.vert"
     }
@@ -31,7 +31,7 @@ mod vertex {
 mod fragment {
     use vulkano_shaders::shader;
 
-    shader!{
+    shader! {
         ty: "fragment",
         path: "shaders/basic.frag"
     }
