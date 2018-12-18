@@ -1,5 +1,3 @@
-#![feature(custom_attribute)]
-
 mod components;
 mod renderer;
 mod resources;
