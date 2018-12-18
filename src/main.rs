@@ -10,11 +10,12 @@ use crate::{
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{MeshComponent, Shape},
-        RenderEvents,
-        Renderer,
+        RenderEvents, Renderer,
     },
-    resources::{FocusGained, ShouldClose, Time},
-    systems::{FlyControlSystem, SDLSystem, TimeSystem, TransformSystem},
+    resources::{FocusGained, KeyboardEvents, ShouldClose, Time},
+    systems::{
+        FlyControlSystem, GameInput, GameInputSystem, SDLSystem, TimeSystem, TransformSystem,
+    },
 };
 use nalgebra::Vector3;
 use specs::prelude::*;
@@ -28,7 +29,7 @@ fn main() {
     env_logger::init();
 
     let sdl = SDLSystem::new();
-    let renderer = Renderer::new(sdl.window()); 
+    let renderer = Renderer::new(sdl.window());
 
     // ECS World
     let mut world = World::new();
@@ -45,7 +46,9 @@ fn main() {
     world.add_resource(Time::default());
     world.add_resource(ShouldClose::default());
     world.add_resource(FocusGained::default());
+    world.add_resource(GameInput::default());
     world.add_resource(RenderEvents::default());
+    world.add_resource(KeyboardEvents::default());
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
@@ -94,6 +97,7 @@ fn main() {
         .with(TimeSystem::default(), "time", &[])
         .with(HierarchySystem::<Link>::new(), "hierarchy", &[])
         .with(TransformSystem::default(), "transform", &["hierarchy"])
+        .with(GameInputSystem::default(), "input", &[])
         .with(FlyControlSystem, "fly", &["time"])
         .with(renderer, "renderer", &["time", "transform", "fly"])
         .with_barrier()

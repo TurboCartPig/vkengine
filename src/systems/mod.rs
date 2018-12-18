@@ -5,7 +5,10 @@ pub use crate::systems::transform::TransformSystem;
 use crate::{
     components::Transform,
     renderer::{camera::ActiveCamera, RenderEvent, RenderEvents},
-    resources::{FocusGained, Keyboard, Keycode, Mouse, ShouldClose, Time},
+    resources::{
+        ControllerAxis, ControllerEvent, ControllerEvents, FocusGained, KeyboardEvent,
+        KeyboardEvents, Keycode, MouseEvent, MouseEvents, ShouldClose, Time,
+    },
 };
 use float_duration::TimePoint;
 use log::info;
@@ -13,11 +16,16 @@ use nalgebra::{UnitQuaternion, Vector3};
 use sdl2::{
     controller::GameController,
     event::{Event, WindowEvent},
-    video::{FullscreenType, Window as SdlWindow},
+    video::Window as SdlWindow,
     EventPump, GameControllerSubsystem, Sdl, VideoSubsystem,
 };
+use shrev::ReaderId;
 use specs::prelude::*;
-use std::{mem, time::Instant};
+use std::{
+    mem,
+    ops::{AddAssign, SubAssign},
+    time::Instant,
+};
 
 /// A System for updating the Time resource in order to expose things like delta time
 pub struct TimeSystem {
@@ -40,13 +48,221 @@ impl<'a> System<'a> for TimeSystem {
     fn run(&mut self, mut time: Self::SystemData) {
         let now = Instant::now();
 
-        let delta = now.float_duration_since(self.last_frame).unwrap();
-        time.delta = delta.as_seconds();
+        let delta = now
+            .float_duration_since(self.last_frame)
+            .unwrap()
+            .as_seconds() as f32;
+        let first_frame = now
+            .float_duration_since(self.first_frame)
+            .unwrap()
+            .as_seconds() as f32;
 
-        let first_frame = now.float_duration_since(self.first_frame).unwrap();
-        time.first_frame = first_frame.as_seconds();
+        *time = Time::new(first_frame, delta, time.timescale());
 
         mem::replace(&mut self.last_frame, now);
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Axis {
+    value: f32,
+}
+
+impl Axis {
+    pub fn from(value: f32) -> Self {
+        Axis { value }
+    }
+
+    pub fn set(&mut self, value: f32) {
+        let value = if value > 1. {
+            1.
+        } else if value < -1. {
+            -1.
+        } else {
+            value
+        };
+
+        self.value = value;
+    }
+
+    pub fn get(&self) -> f32 {
+        self.value
+    }
+}
+
+impl AddAssign<f32> for Axis {
+    fn add_assign(&mut self, value: f32) {
+        self.value = if self.value + value > 1. {
+            1.
+        } else if self.value + value < -1. {
+            -1.
+        } else {
+            self.value + value
+        }
+    }
+}
+
+impl SubAssign<f32> for Axis {
+    fn sub_assign(&mut self, value: f32) {
+        self.value = if self.value - value > 1. {
+            1.
+        } else if self.value - value < -1. {
+            -1.
+        } else {
+            self.value - value
+        }
+    }
+}
+
+//TODO Decide if this or events is the best option for input
+#[derive(Debug, Default)]
+pub struct GameInput {
+    // forward: bool,
+    // backward: bool,
+    // left: bool,
+    // right: bool,
+    forward: Axis,
+    right: Axis,
+    mouse_delta: (f32, f32),
+}
+
+/// Turns keyboard events into game data
+#[derive(Debug, Default)]
+pub struct GameInputSystem {
+    keyboard_read_id: Option<ReaderId<KeyboardEvent>>,
+    mouse_read_id: Option<ReaderId<MouseEvent>>,
+    controller_read_id: Option<ReaderId<ControllerEvent>>,
+    controller_left_thumb_deadzone: i16,
+    controller_right_thumb_deadzone: i16,
+}
+
+impl<'a> System<'a> for GameInputSystem {
+    type SystemData = (
+        Write<'a, GameInput>,
+        Write<'a, ShouldClose>,
+        Read<'a, KeyboardEvents>,
+        Read<'a, MouseEvents>,
+        Read<'a, ControllerEvents>,
+    );
+
+    fn run(
+        &mut self,
+        (mut input, mut should_close, keyboard_events, mouse_events, controller_events): Self::SystemData,
+    ) {
+        // Handle controller event
+        // -----------------------------------------------------------------------------------------------------
+        controller_events
+            .read(self.controller_read_id.as_mut().unwrap())
+            .for_each(|event| match event {
+                ControllerEvent::AxisMotion {
+                    axis: ControllerAxis::LeftX,
+                    value,
+                    ..
+                } => {
+                    let value = if *value > self.controller_left_thumb_deadzone {
+                        *value as f32
+                    } else if *value < -self.controller_left_thumb_deadzone {
+                        *value as f32
+                    } else {
+                        0.
+                    };
+
+                    let value = value / std::i16::MAX as f32;
+                    input.right.set(value);
+                }
+                ControllerEvent::AxisMotion {
+                    axis: ControllerAxis::LeftY,
+                    value,
+                    ..
+                } => {
+                    let value = if *value > self.controller_left_thumb_deadzone {
+                        *value as f32
+                    } else if *value < -self.controller_left_thumb_deadzone {
+                        *value as f32
+                    } else {
+                        0.
+                    };
+
+                    let value = value / std::i16::MAX as f32;
+                    input.forward.set(-value);
+                }
+                _ => (),
+            });
+
+        // Handle keyboard events
+        // -----------------------------------------------------------------------------------------------------
+        keyboard_events
+            .read(self.keyboard_read_id.as_mut().unwrap())
+            .for_each(|event| match event {
+                KeyboardEvent {
+                    pressed: true,
+                    keycode: Keycode::Q,
+                    ..
+                } => {
+                    should_close.0 = true;
+                }
+                KeyboardEvent {
+                    pressed: true,
+                    keycode,
+                    ..
+                } => match keycode {
+                    Keycode::W => input.forward.set(1.),
+                    Keycode::S => input.forward.set(-1.),
+                    Keycode::D => input.right.set(1.),
+                    Keycode::A => input.right.set(-1.0),
+                    _ => (),
+                },
+                KeyboardEvent {
+                    pressed: false,
+                    keycode,
+                    ..
+                } => match keycode {
+                    Keycode::W => input.forward.set(0.),
+                    Keycode::S => input.forward.set(0.),
+                    Keycode::D => input.right.set(0.),
+                    Keycode::A => input.right.set(0.),
+                    _ => (),
+                },
+            });
+
+        // Reset mouse motion
+        input.mouse_delta = (0., 0.);
+
+        // Handle mouse events
+        // -----------------------------------------------------------------------------------------------------
+        mouse_events
+            .read(self.mouse_read_id.as_mut().unwrap())
+            .for_each(|event| match event {
+                MouseEvent::Motion { delta, .. } => {
+                    input.mouse_delta.0 += delta.0 as f32;
+                    input.mouse_delta.1 += delta.1 as f32;
+                }
+                _ => (),
+            });
+    }
+
+    fn setup(&mut self, res: &mut Resources) {
+        Self::SystemData::setup(res);
+
+        // Register keyboard event reader
+        let mut keyboard = res.fetch_mut::<KeyboardEvents>();
+        let reader_id = keyboard.register_reader();
+        self.keyboard_read_id = Some(reader_id);
+
+        // Regster mouse event reader
+        let mut mouse = res.fetch_mut::<MouseEvents>();
+        let reader_id = mouse.register_reader();
+        self.mouse_read_id = Some(reader_id);
+
+        // Register controller event reader
+        let mut controller = res.fetch_mut::<ControllerEvents>();
+        let reader_id = controller.register_reader();
+        self.controller_read_id = Some(reader_id);
+
+        // TODO Load from config
+        // Values recommended by microsoft from xinput docs
+        self.controller_left_thumb_deadzone = 7849;
+        self.controller_right_thumb_deadzone = 8689;
     }
 }
 
@@ -57,18 +273,16 @@ impl<'a> System<'a> for FlyControlSystem {
     type SystemData = (
         Read<'a, Time>,
         Read<'a, FocusGained>,
-        Read<'a, Keyboard>,
-        Read<'a, Mouse>,
+        Read<'a, GameInput>,
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Transform>,
     );
 
     fn run(
         &mut self,
-        (time, input_enabled, keyboard, mouse, active_camera, mut transform): Self::SystemData,
+        (time, input_enabled, input, active_camera, mut transform): Self::SystemData,
     ) {
         // Only handle input if the window is focused
-        // ------------------------------------------------------------------------------------------------------------
         if !input_enabled.0 {
             return;
         }
@@ -78,8 +292,8 @@ impl<'a> System<'a> for FlyControlSystem {
 
         // Rotation
         // ------------------------------------------------------------------------------------------------------------
-        let yaw = -mouse.delta.0 as f32;
-        let pitch = -mouse.delta.1 as f32;
+        let yaw = -input.mouse_delta.0;
+        let pitch = -input.mouse_delta.1;
         // Input scaling
         let (yaw, pitch) = (yaw * 0.001, pitch * 0.001);
 
@@ -88,21 +302,8 @@ impl<'a> System<'a> for FlyControlSystem {
 
         // Translation
         // ------------------------------------------------------------------------------------------------------------
-        if keyboard.pressed(Keycode::W) {
-            camera_t.translate_forward(1.0 * time.delta as f32);
-        }
-
-        if keyboard.pressed(Keycode::S) {
-            camera_t.translate_forward(-1.0 * time.delta as f32);
-        }
-
-        if keyboard.pressed(Keycode::A) {
-            camera_t.translate_right(-1.0 * time.delta as f32);
-        }
-
-        if keyboard.pressed(Keycode::D) {
-            camera_t.translate_right(1.0 * time.delta as f32);
-        }
+        camera_t.translate_forward(input.forward.get() * time.delta() as f32);
+        camera_t.translate_right(input.right.get() * time.delta() as f32);
     }
 }
 
@@ -126,11 +327,11 @@ impl SDLSystem {
         let context = sdl2::init().unwrap();
         let _video_subsystem = context.video().unwrap();
         let controller_subsystem = context.game_controller().unwrap();
-        let controllers = Vec::new();
+        let controllers = Vec::with_capacity(4);
         let event_pump = context.event_pump().unwrap();
-        
+
         context.mouse().set_relative_mouse_mode(true);
-        
+
         let window = _video_subsystem
             .window("vkengine", 1600, 900)
             .resizable()
@@ -156,27 +357,35 @@ impl SDLSystem {
     }
 }
 
+// FIXME Fullscreen currently crashes in forign code
 impl<'a> System<'a> for SDLSystem {
     type SystemData = (
         Write<'a, ShouldClose>,
         Write<'a, FocusGained>,
-        Write<'a, Keyboard>,
-        Write<'a, Mouse>,
         Write<'a, RenderEvents>,
+        Write<'a, KeyboardEvents>,
+        Write<'a, MouseEvents>,
+        Write<'a, ControllerEvents>,
     );
 
     fn run(
         &mut self,
-        (mut should_close, mut window_focus, mut keyboard, mut mouse, mut render_events): Self::SystemData,
+        (
+            mut should_close,
+            mut window_focus,
+            mut render_events,
+            mut keyboard_events,
+            mut mouse_events,
+            mut controller_events,
+        ): Self::SystemData,
     ) {
-        // Reset
-        mouse.clear_deltas();
-
         let mouse_util = &self.context.mouse();
 
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => should_close.0 = true,
+                // Window event
+                // ---------------------------------------------------------------------------------------------------------------
                 Event::Window { win_event, .. } => match win_event {
                     WindowEvent::FocusGained => {
                         window_focus.0 = true;
@@ -187,64 +396,135 @@ impl<'a> System<'a> for SDLSystem {
                         window_focus.0 = false;
                         mouse_util.capture(false);
                         mouse_util.show_cursor(true);
-
-                        mouse.clear_all();
-                        keyboard.clear_all();
+                    }
+                    WindowEvent::Resized(_, _) => {
+                        render_events.single_write(RenderEvent::WindowResized);
                     }
                     _ => (),
                 },
+                // Mouse event
+                // ---------------------------------------------------------------------------------------------------------------
                 Event::MouseMotion {
                     x, y, xrel, yrel, ..
                 } => {
-                    mouse.absolute = (x, y);
-                    mouse.delta = (xrel, yrel);
+                    let event = MouseEvent::Motion {
+                        delta: (xrel, yrel),
+                        absolute: (x, y),
+                    };
+
+                    mouse_events.single_write(event);
                 }
-                Event::MouseButtonDown { mouse_btn, .. } => {
-                    mouse.set_pressed(mouse_btn, true);
+                Event::MouseButtonDown {
+                    mouse_btn, clicks, ..
+                } => {
+                    let event = MouseEvent::Button {
+                        pressed: true,
+                        button: mouse_btn,
+                        clicks,
+                    };
+
+                    mouse_events.single_write(event);
                 }
-                Event::MouseButtonUp { mouse_btn, .. } => {
-                    mouse.set_pressed(mouse_btn, false);
+                Event::MouseButtonUp {
+                    mouse_btn, clicks, ..
+                } => {
+                    let event = MouseEvent::Button {
+                        pressed: false,
+                        button: mouse_btn,
+                        clicks,
+                    };
+
+                    mouse_events.single_write(event);
                 }
+                Event::MouseWheel { x, y, .. } => {
+                    let event = MouseEvent::Wheel { x, y };
+
+                    mouse_events.single_write(event);
+                }
+                // Keyboard event
+                // ---------------------------------------------------------------------------------------------------------------
                 Event::KeyDown {
-                    keycode: Some(Keycode::Q),
+                    keycode: Some(keycode),
+                    keymod,
+                    repeat,
                     ..
                 } => {
-                    should_close.0 = true;
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::F),
-                    ..
-                } => {
-                    self.window.set_fullscreen(FullscreenType::Desktop).unwrap();
-                    render_events.channel.single_write(RenderEvent::EnterFullscreen);
-                }
-                Event::KeyDown {
-                    keycode: Some(key), ..
-                } => {
-                    keyboard.set_pressed(key, true);
+                    let event = KeyboardEvent {
+                        pressed: true,
+                        keycode,
+                        keymod,
+                        repeat,
+                    };
+
+                    keyboard_events.single_write(event);
                 }
                 Event::KeyUp {
-                    keycode: Some(key), ..
+                    keycode: Some(keycode),
+                    keymod,
+                    repeat,
+                    ..
                 } => {
-                    keyboard.set_pressed(key, false);
+                    let event = KeyboardEvent {
+                        pressed: false,
+                        keycode,
+                        keymod,
+                        repeat,
+                    };
+
+                    keyboard_events.single_write(event);
                 }
+                // Controller event
+                // ---------------------------------------------------------------------------------------------------------------
                 Event::ControllerDeviceAdded { which, .. } => {
                     let name = self.controller_subsystem.name_for_index(which).unwrap();
                     info!("Found game controller: {}", name);
 
                     let controller = self.controller_subsystem.open(which).unwrap();
-                    self.controllers.push(controller);
+                    self.controllers.insert(which as usize, controller);
+
+                    let event = ControllerEvent::Connected(which as i32);
+                    controller_events.single_write(event);
                 }
                 Event::ControllerDeviceRemoved { which, .. } => {
-                    // Find index of controller to remove
-                    let idx = self
-                        .controllers
-                        .iter()
-                        .enumerate()
-                        .find(|(_, c)| c.instance_id() == which)
-                        .map(|(idx, _)| idx)
+                    let name = self
+                        .controller_subsystem
+                        .name_for_index(which as u32)
                         .unwrap();
-                    self.controllers.remove(idx);
+                    info!("Game controller removed: {}", name);
+
+                    self.controllers.remove(which as usize);
+
+                    let event = ControllerEvent::Disconnected(which);
+                    controller_events.single_write(event);
+                }
+                Event::ControllerAxisMotion {
+                    which, axis, value, ..
+                } => {
+                    let event = ControllerEvent::AxisMotion {
+                        id: which,
+                        axis,
+                        value,
+                    };
+
+                    controller_events.single_write(event);
+                }
+                Event::ControllerButtonDown { which, button, .. } => {
+                    let event = ControllerEvent::Button {
+                        id: which,
+                        pressed: true,
+                        button,
+                    };
+
+                    controller_events.single_write(event);
+                }
+                Event::ControllerButtonUp { which, button, .. } => {
+                    let event = ControllerEvent::Button {
+                        id: which,
+                        pressed: false,
+                        button,
+                    };
+
+                    controller_events.single_write(event);
                 }
                 _ => (),
             }

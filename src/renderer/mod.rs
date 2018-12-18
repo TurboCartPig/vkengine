@@ -18,12 +18,12 @@ use crate::{
 };
 use log::{error, info, log_enabled, warn, Level};
 use sdl2::video::{Window as SdlWindow, WindowContext};
-use shrev::ReaderId;
-use shrev::EventChannel;
+use shrev::{EventChannel, ReaderId};
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
     mem,
+    ops::{Deref, DerefMut},
     rc::Rc,
     sync::{Arc, RwLock},
 };
@@ -69,17 +69,13 @@ impl VulkanoWindow for SdlWindow {
             swapchain::Surface::from_raw_surface(
                 instance,
                 surface,
-                SendSyncContext { _context: self.context() },
+                SendSyncContext {
+                    _context: self.context(),
+                },
             )
         };
         Arc::new(raw)
     }
-}
-
-/// Resource for sharing the event channel for render events
-#[derive(Default)]
-pub struct RenderEvents {
-    pub channel: EventChannel<RenderEvent>,
 }
 
 #[derive(Debug)]
@@ -87,6 +83,24 @@ pub enum RenderEvent {
     EnterFullscreen,
     LeaveFullscreen,
     WindowResized,
+}
+
+/// Resource for sharing the event channel for render events
+#[derive(Default)]
+pub struct RenderEvents(EventChannel<RenderEvent>);
+
+impl Deref for RenderEvents {
+    type Target = EventChannel<RenderEvent>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RenderEvents {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -205,12 +219,22 @@ impl Renderer {
 
     /// Recreates the swapchain from the old one, in case it is invalid
     pub fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
-        let dimensions = self
-            .surface
-            .capabilities(self.device.physical_device())
-            .unwrap()
-            .current_extent
-            .unwrap_or([1600, 900]);
+        let dimensions = {
+            let caps = self
+                .surface
+                .capabilities(self.device.physical_device())
+                .unwrap();
+
+            let current_extent = caps.current_extent.unwrap_or(caps.min_image_extent);
+
+            if current_extent < caps.min_image_extent {
+                caps.min_image_extent
+            } else if current_extent > caps.max_image_extent {
+                caps.max_image_extent
+            } else {
+                current_extent
+            }
+        };
 
         let (new_swapchain, new_images) = self.swapchain.recreate_with_dimension(dimensions)?;
 
@@ -280,18 +304,22 @@ impl<'a> System<'a> for Renderer {
         self.previous_frame_end.cleanup_finished();
 
         // Handle render events
-        render_events.channel.read(self.event_reader.as_mut().unwrap()).for_each(|event| {
-            info!("Render event: {:?}", event);
-            match event {
-                // RenderEvent::EnterFullscreen => {
-                //     let context = self.surface.window()._context.clone();
-                //     let window = unsafe { SdlWindow::from_ref(context) };
-                //     self.recreate_surface(&window);
-                // }
-                _ => (),
-            }
-        });
-
+        render_events
+            .read(self.event_reader.as_mut().unwrap())
+            .for_each(|event| {
+                info!("Render event: {:?}", event);
+                match event {
+                    // RenderEvent::EnterFullscreen => {
+                    //     let context = self.surface.window()._context.clone();
+                    //     let window = unsafe { SdlWindow::from_ref(context) };
+                    //     self.recreate_surface(&window);
+                    // }
+                    RenderEvent::WindowResized => {
+                        self.recreate_swapchain().unwrap();
+                    }
+                    _ => (),
+                }
+            });
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
         if self.framebuffers.is_none() {
@@ -432,9 +460,10 @@ impl<'a> System<'a> for Renderer {
 
     fn setup(&mut self, res: &mut Resources) {
         Self::SystemData::setup(res);
+
         // Fetch the render event channel and register a reader
         let mut render_events = res.fetch_mut::<RenderEvents>();
-        self.event_reader = Some(render_events.channel.register_reader());
+        self.event_reader = Some(render_events.register_reader());
     }
 }
 
