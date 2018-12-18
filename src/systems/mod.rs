@@ -132,8 +132,6 @@ pub struct GameInputSystem {
     keyboard_read_id: Option<ReaderId<KeyboardEvent>>,
     mouse_read_id: Option<ReaderId<MouseEvent>>,
     controller_read_id: Option<ReaderId<ControllerEvent>>,
-    controller_left_thumb_deadzone: i16,
-    controller_right_thumb_deadzone: i16,
 }
 
 impl<'a> System<'a> for GameInputSystem {
@@ -154,38 +152,11 @@ impl<'a> System<'a> for GameInputSystem {
         controller_events
             .read(self.controller_read_id.as_mut().unwrap())
             .for_each(|event| match event {
-                ControllerEvent::AxisMotion {
-                    axis: ControllerAxis::LeftX,
-                    value,
-                    ..
-                } => {
-                    let value = if *value > self.controller_left_thumb_deadzone {
-                        *value as f32
-                    } else if *value < -self.controller_left_thumb_deadzone {
-                        *value as f32
-                    } else {
-                        0.
-                    };
-
-                    let value = value / std::i16::MAX as f32;
-                    input.right.set(value);
-                }
-                ControllerEvent::AxisMotion {
-                    axis: ControllerAxis::LeftY,
-                    value,
-                    ..
-                } => {
-                    let value = if *value > self.controller_left_thumb_deadzone {
-                        *value as f32
-                    } else if *value < -self.controller_left_thumb_deadzone {
-                        *value as f32
-                    } else {
-                        0.
-                    };
-
-                    let value = value / std::i16::MAX as f32;
-                    input.forward.set(-value);
-                }
+                ControllerEvent::AxisMotion { axis, value, .. } => match axis {
+                    ControllerAxis::LeftX => input.right.set(*value),
+                    ControllerAxis::LeftY => input.forward.set(-value),
+                    _ => (),
+                },
                 _ => (),
             });
 
@@ -258,11 +229,6 @@ impl<'a> System<'a> for GameInputSystem {
         let mut controller = res.fetch_mut::<ControllerEvents>();
         let reader_id = controller.register_reader();
         self.controller_read_id = Some(reader_id);
-
-        // TODO Load from config
-        // Values recommended by microsoft from xinput docs
-        self.controller_left_thumb_deadzone = 7849;
-        self.controller_right_thumb_deadzone = 8689;
     }
 }
 
@@ -311,6 +277,10 @@ impl<'a> System<'a> for FlyControlSystem {
 
 // unsafe impl Send for SendSyncWindow {}
 // unsafe impl Sync for SendSyncWindow {}
+
+static LEFT_THUMB_DEADZONE: i16 = 7849;
+static RIGHT_THUMB_DEADZONE: i16 = 8689;
+static TRIGGER_THRESHOLD: i16 = 30;
 
 /// System for turning sdl events into ecs data
 pub struct SDLSystem {
@@ -500,6 +470,37 @@ impl<'a> System<'a> for SDLSystem {
                 Event::ControllerAxisMotion {
                     which, axis, value, ..
                 } => {
+                    // If the value is inside deadzone: then value is 0
+                    let value = match axis {
+                        // Left
+                        ControllerAxis::LeftX | ControllerAxis::LeftY => {
+                            if value > LEFT_THUMB_DEADZONE || value < -LEFT_THUMB_DEADZONE {
+                                value
+                            } else {
+                                0
+                            }
+                        }
+                        // Right
+                        ControllerAxis::RightX | ControllerAxis::RightY => {
+                            if value > RIGHT_THUMB_DEADZONE || value < -RIGHT_THUMB_DEADZONE {
+                                value
+                            } else {
+                                0
+                            }
+                        }
+                        // Triggers
+                        ControllerAxis::TriggerLeft | ControllerAxis::TriggerRight => {
+                            if value > TRIGGER_THRESHOLD {
+                                value
+                            } else {
+                                0
+                            }
+                        }
+                    };
+
+                    // Normalize
+                    let value = value as f32 / std::i16::MAX as f32;
+
                     let event = ControllerEvent::AxisMotion {
                         id: which,
                         axis,

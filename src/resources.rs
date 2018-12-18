@@ -118,7 +118,7 @@ pub enum ControllerEvent {
     AxisMotion {
         id: i32,
         axis: ControllerAxis,
-        value: i16,
+        value: f32,
     },
     Button {
         id: i32,
