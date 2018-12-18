@@ -69,10 +69,6 @@ pub struct Axis {
 }
 
 impl Axis {
-    pub fn from(value: f32) -> Self {
-        Axis { value }
-    }
-
     pub fn set(&mut self, value: f32) {
         let value = if value > 1. {
             1.
@@ -117,13 +113,18 @@ impl SubAssign<f32> for Axis {
 //TODO Decide if this or events is the best option for input
 #[derive(Debug, Default)]
 pub struct GameInput {
-    // forward: bool,
-    // backward: bool,
-    // left: bool,
-    // right: bool,
     forward: Axis,
     right: Axis,
-    mouse_delta: (f32, f32),
+    controller_view_hor: Axis,
+    controller_view_ver: Axis,
+    mouse_view_hor: f32,
+    mouse_view_ver: f32,
+}
+
+impl GameInput {
+    pub fn view(&self) -> (f32, f32) {
+        (self.controller_view_hor.get() + self.mouse_view_hor, self.controller_view_ver.get() + self.mouse_view_ver)
+    }
 }
 
 /// Turns keyboard events into game data
@@ -151,13 +152,17 @@ impl<'a> System<'a> for GameInputSystem {
         // -----------------------------------------------------------------------------------------------------
         controller_events
             .read(self.controller_read_id.as_mut().unwrap())
-            .for_each(|event| match event {
-                ControllerEvent::AxisMotion { axis, value, .. } => match axis {
-                    ControllerAxis::LeftX => input.right.set(*value),
-                    ControllerAxis::LeftY => input.forward.set(-value),
+            .for_each(|event| {
+                match event {
+                    ControllerEvent::AxisMotion { axis, value, .. } => match axis {
+                        ControllerAxis::LeftX => input.right.set(*value),
+                        ControllerAxis::LeftY => input.forward.set(-value),
+                        ControllerAxis::RightX => input.controller_view_hor.set(*value),
+                        ControllerAxis::RightY => input.controller_view_ver.set(*value),
+                        _ => (),
+                    },
                     _ => (),
-                },
-                _ => (),
+                }
             });
 
         // Handle keyboard events
@@ -165,6 +170,7 @@ impl<'a> System<'a> for GameInputSystem {
         keyboard_events
             .read(self.keyboard_read_id.as_mut().unwrap())
             .for_each(|event| match event {
+                // Quit the game with q
                 KeyboardEvent {
                     pressed: true,
                     keycode: Keycode::Q,
@@ -180,7 +186,7 @@ impl<'a> System<'a> for GameInputSystem {
                     Keycode::W => input.forward.set(1.),
                     Keycode::S => input.forward.set(-1.),
                     Keycode::D => input.right.set(1.),
-                    Keycode::A => input.right.set(-1.0),
+                    Keycode::A => input.right.set(-1.),
                     _ => (),
                 },
                 KeyboardEvent {
@@ -196,17 +202,17 @@ impl<'a> System<'a> for GameInputSystem {
                 },
             });
 
-        // Reset mouse motion
-        input.mouse_delta = (0., 0.);
-
         // Handle mouse events
         // -----------------------------------------------------------------------------------------------------
+        input.mouse_view_ver = 0.;
+        input.mouse_view_hor = 0.;
+
         mouse_events
             .read(self.mouse_read_id.as_mut().unwrap())
             .for_each(|event| match event {
                 MouseEvent::Motion { delta, .. } => {
-                    input.mouse_delta.0 += delta.0 as f32;
-                    input.mouse_delta.1 += delta.1 as f32;
+                    input.mouse_view_hor += delta.0 as f32;
+                    input.mouse_view_ver += delta.1 as f32;
                 }
                 _ => (),
             });
@@ -258,10 +264,8 @@ impl<'a> System<'a> for FlyControlSystem {
 
         // Rotation
         // ------------------------------------------------------------------------------------------------------------
-        let yaw = -input.mouse_delta.0;
-        let pitch = -input.mouse_delta.1;
-        // Input scaling
-        let (yaw, pitch) = (yaw * 0.001, pitch * 0.001);
+        let (yaw, pitch) = input.view();
+        let (yaw, pitch) = (yaw * -0.001, pitch * -0.001);
 
         camera_t.rotate_local(UnitQuaternion::from_scaled_axis(Vector3::x() * pitch));
         camera_t.rotate_global(UnitQuaternion::from_scaled_axis(Vector3::y() * yaw));

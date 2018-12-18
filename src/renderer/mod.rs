@@ -403,10 +403,6 @@ impl<'a> System<'a> for Renderer {
 
         let secondary_command_buffers = secondary_command_buffers.into_inner().unwrap();
 
-        if secondary_command_buffers.len() == 0 {
-            return;
-        }
-
         let command_buffer = {
             let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
@@ -639,7 +635,7 @@ fn new_device_and_queues(
                 queues.push((qf, 1.0f32));
                 queue_types.push(QueueFamilyTypes::General);
             }
-        } else if queues.len() < 1 {
+        } else if queues.is_empty() {
             if let Some(id) = queue_family_ids.graphics {
                 let qf = physical.queue_family_by_id(id).unwrap();
 

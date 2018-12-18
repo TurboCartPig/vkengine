@@ -76,31 +76,11 @@ impl<'a> System<'a> for TransformSystem {
                 let mut parent_entity = entity;
                 while let Some(link) = links.get(parent_entity) {
                     parent_entity = link.parent_entity();
-                    println!("Hei");
                     if let Some(p_trans) = transforms.get(parent_entity) {
                         matrix.mat = p_trans.to_matrix() * matrix.mat;
-                        println!("Hei2");
                     }
                 }
             });
-
-        // Sync transforms without parents
-        // We join on self.dirty so we only sync transforms that are out of sync
-        // (&entities, &transforms, &mut matrices, &self.dirty, !&links)
-        //     .join()
-        //     .for_each(|(entity, transform, matrix, _, _)| {
-        //         matrix.mat = transform.to_matrix();
-        //     });
-
-        // Sync transforms with parents
-        // hierarchy.all().iter().for_each(|entity| {
-        //     let self_dirty = self.dirty.contains(entity.id());
-
-        // });
-
-        // (&entities, &links, &transforms, &mut matrices, &self.dirty).join().for_each(|(entity, link, transform, matrix, _)| {
-
-        // });
 
         // Reset
         self.dirty.clear();

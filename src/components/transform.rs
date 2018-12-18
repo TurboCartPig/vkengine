@@ -53,9 +53,9 @@ impl Transform {
     }
 
     pub fn translate(&mut self, t: Vector3<f32>) {
-        // if t != zero() {
-        self.iso.translation.vector += self.iso.rotation * t;
-        // }
+        if t != zero() {
+            self.iso.translation.vector += self.iso.rotation * t;
+        }
     }
 
     pub fn translate_along(&mut self, dir: Vector3<f32>, scaler: f32) {
@@ -73,15 +73,11 @@ impl Transform {
     }
 
     pub fn rotate_global(&mut self, r: UnitQuaternion<f32>) {
-        // if r != UnitQuaternion::identity() {
         self.iso.rotation = r * self.iso.rotation;
-        // }
     }
 
     pub fn rotate_local(&mut self, r: UnitQuaternion<f32>) {
-        // if r != UnitQuaternion::identity() {
-        self.iso.rotation = self.iso.rotation * r;
-        // }
+        self.iso.rotation *= r;
     }
 }
 

@@ -46,6 +46,6 @@ impl Camera {
 
 impl Default for Camera {
     fn default() -> Self {
-        Self::new({ 16 / 9 } as f32, { 3.14 / 2. } as f32)
+        Self::new(16./9., std::f32::consts::FRAC_PI_2)
     }
 }
