@@ -1,4 +1,3 @@
-use fixedbitset::FixedBitSet;
 use std::collections::HashMap;
 
 pub use sdl2::{keyboard::Keycode, mouse::MouseButton};
@@ -54,14 +53,6 @@ pub struct Mouse {
 }
 
 impl Mouse {
-    pub fn delta_x(&self) -> i32 {
-        self.delta.0
-    }
-
-    pub fn delta_y(&self) -> i32 {
-        self.delta.1
-    }
-
     pub fn clear_deltas(&mut self) {
         self.delta = (0, 0)
     }
@@ -80,5 +71,3 @@ impl Mouse {
         self.buttons.insert(button, val);
     }
 }
-
-pub struct Controller;

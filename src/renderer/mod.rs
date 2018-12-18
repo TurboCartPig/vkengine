@@ -15,14 +15,16 @@ use crate::{
         shaders::ShaderSet,
     },
     resources::Time,
-    SendWindowContext, VulkanoWindow,
 };
 use log::{error, info, log_enabled, warn, Level};
-use sdl2::video::Window as SdlWindow;
+use sdl2::video::{Window as SdlWindow, WindowContext};
+use shrev::ReaderId;
+use shrev::EventChannel;
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
     mem,
+    rc::Rc,
     sync::{Arc, RwLock},
 };
 use vulkano::{
@@ -35,15 +37,57 @@ use vulkano::{
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
     image::{attachment::AttachmentImage, SwapchainImage},
     impl_vertex,
-    instance::{self, InstanceExtensions, PhysicalDevice, PhysicalDeviceType},
+    instance::{self, Instance, InstanceExtensions, PhysicalDevice, PhysicalDeviceType},
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     single_pass_renderpass,
     swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
     sync::{self, FlushError, GpuFuture},
+    VulkanObject,
 };
 
-pub type Window = SendWindowContext;
+pub type Window = SendSyncContext;
 pub type Surface = Arc<swapchain::Surface<Window>>;
+
+pub struct SendSyncContext {
+    pub _context: Rc<WindowContext>,
+}
+
+unsafe impl Send for SendSyncContext {}
+unsafe impl Sync for SendSyncContext {}
+
+pub trait VulkanoWindow {
+    fn vulkano_surface(&self, instance: Arc<Instance>) -> Surface;
+}
+
+impl VulkanoWindow for SdlWindow {
+    fn vulkano_surface(&self, instance: Arc<Instance>) -> Surface {
+        let raw = unsafe {
+            let surface = self
+                .vulkan_create_surface(instance.internal_object())
+                .unwrap();
+
+            swapchain::Surface::from_raw_surface(
+                instance,
+                surface,
+                SendSyncContext { _context: self.context() },
+            )
+        };
+        Arc::new(raw)
+    }
+}
+
+/// Resource for sharing the event channel for render events
+#[derive(Default)]
+pub struct RenderEvents {
+    pub channel: EventChannel<RenderEvent>,
+}
+
+#[derive(Debug)]
+pub enum RenderEvent {
+    EnterFullscreen,
+    LeaveFullscreen,
+    WindowResized,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Vertex {
@@ -70,13 +114,14 @@ pub struct Renderer {
             >,
         >,
     >,
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
-    graphics_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync>,
+    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
+    graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     dynamic_state: DynamicState,
     depth_buffer: Arc<AttachmentImage>,
     uniform_buffer_pool: CpuBufferPool<shaders::VertexInput>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
     previous_frame_end: Box<GpuFuture + Send + Sync>,
+    event_reader: Option<ReaderId<RenderEvent>>,
     _debug: Debug,
 }
 
@@ -96,12 +141,9 @@ impl Renderer {
 
         let framebuffers = None;
 
-        let shaders = ShaderSet::new(device.clone());
-
-        let render_pass = build_render_pass(device.clone(), swapchain.format());
-
-        let graphics_pipeline =
-            build_graphics_pipeline(device.clone(), render_pass.clone(), &shaders);
+        let depth_buffer =
+            AttachmentImage::transient(device.clone(), swapchain.dimensions(), Format::D16Unorm)
+                .unwrap();
 
         let dynamic_state = DynamicState {
             line_width: None,
@@ -116,14 +158,17 @@ impl Renderer {
             scissors: None,
         };
 
+        let shaders = ShaderSet::new(device.clone());
+
+        let render_pass = build_render_pass(device.clone(), swapchain.format());
+
+        let graphics_pipeline =
+            build_graphics_pipeline(device.clone(), render_pass.clone(), &shaders);
+
         let uniform_buffer_pool =
             CpuBufferPool::<shaders::VertexInput>::new(device.clone(), BufferUsage::all());
 
         let descriptor_set_pool = FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0);
-
-        let depth_buffer =
-            AttachmentImage::transient(device.clone(), swapchain.dimensions(), Format::D16Unorm)
-                .unwrap();
 
         let previous_frame_end = Box::new(sync::now(device.clone())) as Box<_>;
 
@@ -141,12 +186,25 @@ impl Renderer {
             uniform_buffer_pool,
             descriptor_set_pool,
             previous_frame_end,
+            event_reader: None,
             _debug,
         }
     }
 
-    /// Recreates the swapchain inplace, in case is is invalid
-    fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
+    /// Recreates the surface. Also recreates the swapchain and framebuffers
+    // pub fn recreate_surface(&mut self, window: &SdlWindow) {
+    //     let surface = window.vulkano_surface(self.device.instance().clone());
+    //     let (swapchain, images) = new_swapchain_and_images(self.device.clone(), surface.clone(), &self.queues);
+
+    //     mem::replace(&mut self.surface, surface);
+    //     mem::replace(&mut self.swapchain, swapchain);
+    //     mem::replace(&mut self.images, images);
+
+    //     self.recreate_framebuffers();
+    // }
+
+    /// Recreates the swapchain from the old one, in case it is invalid
+    pub fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
         let dimensions = self
             .surface
             .capabilities(self.device.physical_device())
@@ -174,11 +232,12 @@ impl Renderer {
         self.recreate_framebuffers();
 
         warn!("Swapchain recreated");
+
         Ok(())
     }
 
     /// Recreates the framebuffers backing the swapchain images inplace
-    fn recreate_framebuffers(&mut self) {
+    pub fn recreate_framebuffers(&mut self) {
         let new_framebuffers = Some(
             self.images
                 .iter()
@@ -197,6 +256,8 @@ impl Renderer {
         );
 
         mem::replace(&mut self.framebuffers, new_framebuffers);
+
+        warn!("Framebuffers recreated");
     }
 }
 
@@ -208,14 +269,29 @@ impl<'a> System<'a> for Renderer {
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, Camera>,
         Read<'a, Time>,
+        Read<'a, RenderEvents>,
     );
 
     /// The main draw/render function
     fn run(
         &mut self,
-        (mesh, transform, transform_matrix, active_camera, mut camera, _time): Self::SystemData,
+        (mesh, transform, transform_matrix, active_camera, mut camera, _time, render_events): Self::SystemData,
     ) {
         self.previous_frame_end.cleanup_finished();
+
+        // Handle render events
+        render_events.channel.read(self.event_reader.as_mut().unwrap()).for_each(|event| {
+            info!("Render event: {:?}", event);
+            match event {
+                // RenderEvent::EnterFullscreen => {
+                //     let context = self.surface.window()._context.clone();
+                //     let window = unsafe { SdlWindow::from_ref(context) };
+                //     self.recreate_surface(&window);
+                // }
+                _ => (),
+            }
+        });
+
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
         if self.framebuffers.is_none() {
@@ -311,7 +387,7 @@ impl<'a> System<'a> for Renderer {
             .unwrap()
             .begin_render_pass(
                 self.framebuffers.as_ref().unwrap()[image_number].clone(),
-                true, // This makes it so that I can execute secondary command buffers
+                true, // This makes it so that we can execute secondary command buffers
                 vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
             )
             .unwrap();
@@ -352,6 +428,13 @@ impl<'a> System<'a> for Renderer {
 
         // Store the GpuFuture in Renderer again
         mem::replace(&mut self.previous_frame_end, previous_frame_end);
+    }
+
+    fn setup(&mut self, res: &mut Resources) {
+        Self::SystemData::setup(res);
+        // Fetch the render event channel and register a reader
+        let mut render_events = res.fetch_mut::<RenderEvents>();
+        self.event_reader = Some(render_events.channel.register_reader());
     }
 }
 

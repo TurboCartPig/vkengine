@@ -4,11 +4,18 @@ pub use crate::systems::transform::TransformSystem;
 
 use crate::{
     components::Transform,
-    renderer::camera::ActiveCamera,
-    resources::{FocusGained, Keyboard, Keycode, Mouse, MouseButton, Time},
+    renderer::{camera::ActiveCamera, RenderEvent, RenderEvents},
+    resources::{FocusGained, Keyboard, Keycode, Mouse, ShouldClose, Time},
 };
 use float_duration::TimePoint;
-use nalgebra::{abs, UnitQuaternion, Vector3};
+use log::info;
+use nalgebra::{UnitQuaternion, Vector3};
+use sdl2::{
+    controller::GameController,
+    event::{Event, WindowEvent},
+    video::{FullscreenType, Window as SdlWindow},
+    EventPump, GameControllerSubsystem, Sdl, VideoSubsystem,
+};
 use specs::prelude::*;
 use std::{mem, time::Instant};
 
@@ -71,8 +78,8 @@ impl<'a> System<'a> for FlyControlSystem {
 
         // Rotation
         // ------------------------------------------------------------------------------------------------------------
-        let yaw = -mouse.delta_x() as f32;
-        let pitch = -mouse.delta_y() as f32;
+        let yaw = -mouse.delta.0 as f32;
+        let pitch = -mouse.delta.1 as f32;
         // Input scaling
         let (yaw, pitch) = (yaw * 0.001, pitch * 0.001);
 
@@ -95,6 +102,152 @@ impl<'a> System<'a> for FlyControlSystem {
 
         if keyboard.pressed(Keycode::D) {
             camera_t.translate_right(1.0 * time.delta as f32);
+        }
+    }
+}
+
+// pub struct SendSyncWindow(pub SdlWindow);
+
+// unsafe impl Send for SendSyncWindow {}
+// unsafe impl Sync for SendSyncWindow {}
+
+/// System for turning sdl events into ecs data
+pub struct SDLSystem {
+    context: Sdl,
+    _video_subsystem: VideoSubsystem,
+    window: SdlWindow,
+    controller_subsystem: GameControllerSubsystem,
+    controllers: Vec<GameController>,
+    event_pump: EventPump,
+}
+
+impl SDLSystem {
+    pub fn new() -> Self {
+        let context = sdl2::init().unwrap();
+        let _video_subsystem = context.video().unwrap();
+        let controller_subsystem = context.game_controller().unwrap();
+        let controllers = Vec::new();
+        let event_pump = context.event_pump().unwrap();
+        
+        context.mouse().set_relative_mouse_mode(true);
+        
+        let window = _video_subsystem
+            .window("vkengine", 1600, 900)
+            .resizable()
+            .position_centered()
+            .input_grabbed()
+            .allow_highdpi()
+            .vulkan()
+            .build()
+            .unwrap();
+
+        Self {
+            context,
+            _video_subsystem,
+            window,
+            controller_subsystem,
+            controllers,
+            event_pump,
+        }
+    }
+
+    pub fn window(&self) -> &SdlWindow {
+        &self.window
+    }
+}
+
+impl<'a> System<'a> for SDLSystem {
+    type SystemData = (
+        Write<'a, ShouldClose>,
+        Write<'a, FocusGained>,
+        Write<'a, Keyboard>,
+        Write<'a, Mouse>,
+        Write<'a, RenderEvents>,
+    );
+
+    fn run(
+        &mut self,
+        (mut should_close, mut window_focus, mut keyboard, mut mouse, mut render_events): Self::SystemData,
+    ) {
+        // Reset
+        mouse.clear_deltas();
+
+        let mouse_util = &self.context.mouse();
+
+        for event in self.event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. } => should_close.0 = true,
+                Event::Window { win_event, .. } => match win_event {
+                    WindowEvent::FocusGained => {
+                        window_focus.0 = true;
+                        mouse_util.capture(true);
+                        mouse_util.show_cursor(false);
+                    }
+                    WindowEvent::FocusLost => {
+                        window_focus.0 = false;
+                        mouse_util.capture(false);
+                        mouse_util.show_cursor(true);
+
+                        mouse.clear_all();
+                        keyboard.clear_all();
+                    }
+                    _ => (),
+                },
+                Event::MouseMotion {
+                    x, y, xrel, yrel, ..
+                } => {
+                    mouse.absolute = (x, y);
+                    mouse.delta = (xrel, yrel);
+                }
+                Event::MouseButtonDown { mouse_btn, .. } => {
+                    mouse.set_pressed(mouse_btn, true);
+                }
+                Event::MouseButtonUp { mouse_btn, .. } => {
+                    mouse.set_pressed(mouse_btn, false);
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::Q),
+                    ..
+                } => {
+                    should_close.0 = true;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::F),
+                    ..
+                } => {
+                    self.window.set_fullscreen(FullscreenType::Desktop).unwrap();
+                    render_events.channel.single_write(RenderEvent::EnterFullscreen);
+                }
+                Event::KeyDown {
+                    keycode: Some(key), ..
+                } => {
+                    keyboard.set_pressed(key, true);
+                }
+                Event::KeyUp {
+                    keycode: Some(key), ..
+                } => {
+                    keyboard.set_pressed(key, false);
+                }
+                Event::ControllerDeviceAdded { which, .. } => {
+                    let name = self.controller_subsystem.name_for_index(which).unwrap();
+                    info!("Found game controller: {}", name);
+
+                    let controller = self.controller_subsystem.open(which).unwrap();
+                    self.controllers.push(controller);
+                }
+                Event::ControllerDeviceRemoved { which, .. } => {
+                    // Find index of controller to remove
+                    let idx = self
+                        .controllers
+                        .iter()
+                        .enumerate()
+                        .find(|(_, c)| c.instance_id() == which)
+                        .map(|(idx, _)| idx)
+                        .unwrap();
+                    self.controllers.remove(idx);
+                }
+                _ => (),
+            }
         }
     }
 }

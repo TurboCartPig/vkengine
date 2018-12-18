@@ -5,7 +5,7 @@ authors = ["Dennis Kristiansen <dennkris@live.no>"]
 edition = "2018"
 
 [dependencies]
-sdl2 = "0.32.0-beta.2"
+sdl2 = "0.32.0"
 # sdl2 = { path = "../rust-sdl2" }
 vulkano = "0.11.1"
 vulkano-shaders = "0.11.1"
@@ -22,7 +22,7 @@ env_logger = "0.6.0"
 
 # Math and physics
 alga = "0.7.2"
-nalgebra = "0.16.11"
+nalgebra = "0.16.12"
 #ncollide3d = "*"
 #nphysics3d = "*"
 
@@ -33,6 +33,7 @@ genmesh = "0.6.2"
 specs = "0.14.1"
 specs-derive = "0.3.0"
 specs-hierarchy = "0.3.0"
+shrev = "1.0.1"
 
 [profile.release]
 lto = true
