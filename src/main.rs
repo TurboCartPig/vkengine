@@ -7,7 +7,7 @@ use crate::{
     components::{Link, Transform, TransformMatrix},
     renderer::{
         camera::{ActiveCamera, Camera},
-        geometry::{MeshComponent, Shape},
+        geometry::{MeshBuilder, MeshComponent, Shape},
         RenderEvents, Renderer,
     },
     resources::{FocusGained, KeyboardEvents, ShouldClose, Time},
@@ -37,6 +37,7 @@ fn main() {
     world.register::<Transform>();
     world.register::<TransformMatrix>();
     world.register::<MeshComponent>();
+    world.register::<MeshBuilder>();
     world.register::<ActiveCamera>();
     world.register::<Camera>();
 
@@ -75,10 +76,7 @@ fn main() {
         .create_entity()
         .with(Link::new(parent))
         .with(Transform::default())
-        .with(MeshComponent::from_shape(
-            renderer.device.clone(),
-            Shape::Cube,
-        ))
+        .with(MeshBuilder::from_shape(Shape::Cube))
         .build();
 
     // Camera

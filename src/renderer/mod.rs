@@ -10,11 +10,11 @@ use crate::{
     renderer::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
-        geometry::MeshComponent,
+        geometry::{MeshBuilder, MeshComponent, Vertex},
         queues::{QueueFamilyIds, QueueFamilyTypes},
         shaders::ShaderSet,
+        shaders::VertexInput,
     },
-    resources::Time,
 };
 use log::{error, info, log_enabled, warn, Level};
 use sdl2::video::{Window as SdlWindow, WindowContext};
@@ -29,14 +29,14 @@ use std::{
 };
 use vulkano::{
     app_info_from_cargo_toml,
-    buffer::{cpu_pool::CpuBufferPool, BufferUsage},
+    buffer::cpu_pool::CpuBufferPool,
+    buffer::BufferUsage,
     command_buffer::{AutoCommandBufferBuilder, DynamicState},
     descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
     device::{Device, DeviceExtensions, Features},
     format::Format,
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
     image::{attachment::AttachmentImage, SwapchainImage},
-    impl_vertex,
     instance::{self, Instance, InstanceExtensions, PhysicalDevice, PhysicalDeviceType},
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     single_pass_renderpass,
@@ -80,9 +80,9 @@ impl VulkanoWindow for SdlWindow {
 
 #[derive(Debug)]
 pub enum RenderEvent {
-    EnterFullscreen,
-    LeaveFullscreen,
     WindowResized,
+    StopRendering,
+    StartRendering,
 }
 
 /// Resource for sharing the event channel for render events
@@ -102,14 +102,6 @@ impl DerefMut for RenderEvents {
         &mut self.0
     }
 }
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Vertex {
-    position: [f32; 3],
-    normal: [f32; 3],
-}
-
-impl_vertex!(Vertex, position, normal);
 
 /// The main renderer
 pub struct Renderer {
@@ -136,6 +128,7 @@ pub struct Renderer {
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
     previous_frame_end: Box<GpuFuture + Send + Sync>,
     event_reader: Option<ReaderId<RenderEvent>>,
+    should_render: bool,
     _debug: Debug,
 }
 
@@ -179,12 +172,16 @@ impl Renderer {
         let graphics_pipeline =
             build_graphics_pipeline(device.clone(), render_pass.clone(), &shaders);
 
-        let uniform_buffer_pool =
-            CpuBufferPool::<shaders::VertexInput>::new(device.clone(), BufferUsage::all());
+        let uniform_buffer_pool = CpuBufferPool::<VertexInput>::new(
+            device.clone(),
+            BufferUsage::uniform_buffer_transfer_destination(),
+        );
 
         let descriptor_set_pool = FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0);
 
         let previous_frame_end = Box::new(sync::now(device.clone())) as Box<_>;
+
+        let should_render = true;
 
         Self {
             device,
@@ -201,21 +198,10 @@ impl Renderer {
             descriptor_set_pool,
             previous_frame_end,
             event_reader: None,
+            should_render,
             _debug,
         }
     }
-
-    /// Recreates the surface. Also recreates the swapchain and framebuffers
-    // pub fn recreate_surface(&mut self, window: &SdlWindow) {
-    //     let surface = window.vulkano_surface(self.device.instance().clone());
-    //     let (swapchain, images) = new_swapchain_and_images(self.device.clone(), surface.clone(), &self.queues);
-
-    //     mem::replace(&mut self.surface, surface);
-    //     mem::replace(&mut self.swapchain, swapchain);
-    //     mem::replace(&mut self.images, images);
-
-    //     self.recreate_framebuffers();
-    // }
 
     /// Recreates the swapchain from the old one, in case it is invalid
     pub fn recreate_swapchain(&mut self) -> Result<(), SwapchainCreationError> {
@@ -287,39 +273,61 @@ impl Renderer {
 
 impl<'a> System<'a> for Renderer {
     type SystemData = (
-        ReadStorage<'a, MeshComponent>,
+        Entities<'a>,
+        WriteStorage<'a, MeshComponent>,
         ReadStorage<'a, Transform>,
         ReadStorage<'a, TransformMatrix>,
         ReadStorage<'a, ActiveCamera>,
+        WriteStorage<'a, MeshBuilder>,
         WriteStorage<'a, Camera>,
-        Read<'a, Time>,
         Read<'a, RenderEvents>,
     );
 
     /// The main draw/render function
     fn run(
         &mut self,
-        (mesh, transform, transform_matrix, active_camera, mut camera, _time, render_events): Self::SystemData,
+        (
+            entities,
+            mut meshes,
+            transforms,
+            transform_matrixes,
+            active_cameras,
+            mut mesh_builders,
+            mut cameras,
+            render_events,
+        ): Self::SystemData,
     ) {
+        // Cleanup
         self.previous_frame_end.cleanup_finished();
 
+        // FIXME This seems like a hack and not the proper way to do this
+        // Swap the GpuFuture out of the Renderer
+        let mut frame_future = Box::new(sync::now(self.device.clone())) as Box<_>;
+        mem::swap(&mut frame_future, &mut self.previous_frame_end);
+
         // Handle render events
+        // --------------------------------------------------------------------------------------------------------
         render_events
             .read(self.event_reader.as_mut().unwrap())
             .for_each(|event| {
-                info!("Render event: {:?}", event);
+                warn!("Render event: {:?}", event);
                 match event {
-                    // RenderEvent::EnterFullscreen => {
-                    //     let context = self.surface.window()._context.clone();
-                    //     let window = unsafe { SdlWindow::from_ref(context) };
-                    //     self.recreate_surface(&window);
-                    // }
                     RenderEvent::WindowResized => {
                         self.recreate_swapchain().unwrap();
                     }
-                    _ => (),
+                    RenderEvent::StopRendering => {
+                        self.should_render = false;
+                    }
+                    RenderEvent::StartRendering => {
+                        self.should_render = true;
+                    }
+                    // _ => (),
                 }
             });
+
+        if !self.should_render {
+            return;
+        }
 
         // TODO Find out if this is only needed for init or if we need to check for this each frame
         if self.framebuffers.is_none() {
@@ -327,6 +335,7 @@ impl<'a> System<'a> for Renderer {
         }
 
         // Acquire image to draw final frame to
+        // ------------------------------------------------------------------------------------------------------------
         let (image_number, acquired_future) =
             match swapchain::acquire_next_image(self.swapchain.clone(), None) {
                 Ok(ret) => ret,
@@ -339,43 +348,81 @@ impl<'a> System<'a> for Renderer {
                 Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
             };
 
+        let frame_future = frame_future.join(acquired_future);
+
         // Camera
-        let (_, camera, camera_t) = (&active_camera, &mut camera, &transform)
+        // ----------------------------------------------------------------------------------------------------------------------
+        let (_, camera, camera_t) = (&active_cameras, &mut cameras, &transforms)
             .join()
             .next()
             .unwrap();
+
         let dimensions = self.swapchain.dimensions();
         camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
+
         let view = camera_t.to_view_matrix();
+
+        // Update uniforms
+        // ----------------------------------------------------------------------------------------------------------
+
+        let mut buffer_update_cb = AutoCommandBufferBuilder::primary_one_time_submit(
+            self.device.clone(),
+            self.queues.general.family(),
+        )
+        .unwrap();
+
+        for (mesh, transform) in (&meshes, &transform_matrixes).join() {
+            let new_uniforms = VertexInput {
+                model: transform.mat.into(),
+                view: view.into(),
+                proj: camera.projection(),
+            };
+
+            buffer_update_cb = buffer_update_cb
+                .update_buffer(mesh.uniform_buffer.clone(), new_uniforms)
+                .unwrap();
+        }
+
+        let buffer_update_cb = buffer_update_cb.build().unwrap();
+        let frame_future = frame_future
+            .then_execute(self.queues.general.clone(), buffer_update_cb)
+            .unwrap();
+
+        // Mesh building
+        //---------------------------------------------------------------------------------------------------------------
+
+        // Build mesh components from mesh builders
+        for (entity, builder, transform) in
+            (&entities, &mut mesh_builders, &transform_matrixes).join()
+        {
+            let vertex_data = VertexInput {
+                model: transform.mat.into(),
+                view: view.into(),
+                proj: camera.projection(),
+            };
+
+            let mesh = builder.with_uniforms(vertex_data).build(
+                self.device.clone(),
+                &self.uniform_buffer_pool,
+                &mut self.descriptor_set_pool,
+            );
+
+            meshes.insert(entity, mesh).unwrap();
+        }
+
+        // All meshes are built and we can get rid of builders
+        mesh_builders.clear();
+
+        // Drawing
+        // --------------------------------------------------------------------------------------------------------------------------
 
         let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
 
-        for (mesh, model) in (&mesh, &transform_matrix).join() {
-            let uniform_buffer_subbuffer = {
-                let model = model.mat;
-
-                let uniform_data = shaders::VertexInput {
-                    view: view.into(),
-                    proj: camera.projection(),
-                    model: model.into(),
-                };
-
-                self.uniform_buffer_pool.next(uniform_data).unwrap()
-            };
-
-            // FIXME Make persistant descriptor sets and put them on the MeshComponent
-            let descriptor_set = self
-                .descriptor_set_pool
-                .next()
-                .add_buffer(uniform_buffer_subbuffer)
-                .unwrap()
-                .build()
-                .unwrap();
-
+        for mesh in (&meshes).join() {
             let secondary_command_buffer =
                 AutoCommandBufferBuilder::secondary_graphics_one_time_submit(
                     self.device.clone(),
-                    self.queues.graphics.family(),
+                    self.queues.general.family(),
                     Subpass::from(self.render_pass.clone(), 0).unwrap(),
                 )
                 .unwrap()
@@ -383,7 +430,7 @@ impl<'a> System<'a> for Renderer {
                     self.graphics_pipeline.clone(),
                     &self.dynamic_state,
                     vec![mesh.vertex_buffer.clone()],
-                    descriptor_set,
+                    mesh.descriptor_set.clone(),
                     (),
                 )
                 .unwrap()
@@ -396,17 +443,12 @@ impl<'a> System<'a> for Renderer {
             }
         }
 
-        // FIXME This seems like a hack and not the proper way to do this
-        // Swap the GpuFuture out of the Renderer
-        let mut previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
-        mem::swap(&mut previous_frame_end, &mut self.previous_frame_end);
-
         let secondary_command_buffers = secondary_command_buffers.into_inner().unwrap();
 
         let command_buffer = {
             let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
-                self.queues.graphics.family(),
+                self.queues.general.family(),
             )
             .unwrap()
             .begin_render_pass(
@@ -426,19 +468,18 @@ impl<'a> System<'a> for Renderer {
             command_buffer.end_render_pass().unwrap().build().unwrap()
         };
 
-        let present_future = previous_frame_end
-            .join(acquired_future)
-            .then_execute(self.queues.present.clone(), command_buffer)
+        let present_future = frame_future
+            .then_execute(self.queues.general.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
-                self.queues.present.clone(),
+                self.queues.general.clone(),
                 self.swapchain.clone(),
                 image_number,
             )
             .then_signal_fence_and_flush();
 
-        previous_frame_end = match present_future {
-            Ok(future) => Box::new(future) as Box<_>,
+        let frame_future = match present_future {
+            Ok(future) => Box::new(future) as Box<GpuFuture + Send + Sync>,
             Err(FlushError::OutOfDate) => {
                 error!("Swapchain out of date");
                 self.recreate_swapchain().unwrap();
@@ -451,7 +492,7 @@ impl<'a> System<'a> for Renderer {
         };
 
         // Store the GpuFuture in Renderer again
-        mem::replace(&mut self.previous_frame_end, previous_frame_end);
+        mem::replace(&mut self.previous_frame_end, frame_future);
     }
 
     fn setup(&mut self, res: &mut Resources) {
