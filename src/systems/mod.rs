@@ -123,7 +123,10 @@ pub struct GameInput {
 
 impl GameInput {
     pub fn view(&self) -> (f32, f32) {
-        (self.controller_view_hor.get() + self.mouse_view_hor, self.controller_view_ver.get() + self.mouse_view_ver)
+        (
+            self.controller_view_hor.get() + self.mouse_view_hor,
+            self.controller_view_ver.get() + self.mouse_view_ver,
+        )
     }
 }
 
@@ -152,17 +155,15 @@ impl<'a> System<'a> for GameInputSystem {
         // -----------------------------------------------------------------------------------------------------
         controller_events
             .read(self.controller_read_id.as_mut().unwrap())
-            .for_each(|event| {
-                match event {
-                    ControllerEvent::AxisMotion { axis, value, .. } => match axis {
-                        ControllerAxis::LeftX => input.right.set(*value),
-                        ControllerAxis::LeftY => input.forward.set(-value),
-                        ControllerAxis::RightX => input.controller_view_hor.set(*value),
-                        ControllerAxis::RightY => input.controller_view_ver.set(*value),
-                        _ => (),
-                    },
+            .for_each(|event| match event {
+                ControllerEvent::AxisMotion { axis, value, .. } => match axis {
+                    ControllerAxis::LeftX => input.right.set(*value),
+                    ControllerAxis::LeftY => input.forward.set(-value),
+                    ControllerAxis::RightX => input.controller_view_hor.set(*value),
+                    ControllerAxis::RightY => input.controller_view_ver.set(*value),
                     _ => (),
-                }
+                },
+                _ => (),
             });
 
         // Handle keyboard events
@@ -373,6 +374,12 @@ impl<'a> System<'a> for SDLSystem {
                     }
                     WindowEvent::Resized(_, _) => {
                         render_events.single_write(RenderEvent::WindowResized);
+                    }
+                    WindowEvent::Hidden | WindowEvent::Minimized => {
+                        render_events.single_write(RenderEvent::StopRendering);
+                    }
+                    WindowEvent::Shown | WindowEvent::Exposed => {
+                        render_events.single_write(RenderEvent::StartRendering);
                     }
                     _ => (),
                 },

@@ -22,7 +22,6 @@ impl<'a> System<'a> for TransformSystem {
         WriteStorage<'a, TransformMatrix>,
     );
 
-    // TODO We clone 2 bitsets here, that is not optimal
     fn run(&mut self, (entities, hierarchy, links, transforms, mut matrices): Self::SystemData) {
         // Add TransformMatrix component to all entities with Transforms
         (&entities, &transforms, !matrices.mask().clone())
