@@ -5,8 +5,7 @@ authors = ["Dennis Kristiansen <dennkris@live.no>"]
 edition = "2018"
 
 [dependencies]
-sdl2 = "0.32.0"
-# sdl2 = { path = "../rust-sdl2" }
+sdl2 = { version = "0.32.1", default-features = false, features = ["bundled", "static-link"] }
 vulkano = "0.11.1"
 vulkano-shaders = "0.11.1"
 # vulkano = { path = "../vulkano/vulkano" }
