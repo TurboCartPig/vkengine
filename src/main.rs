@@ -20,8 +20,9 @@ use specs::prelude::*;
 use specs_hierarchy::HierarchySystem;
 
 //TODO Mesh loading
-//TODO Use glyph-brush insted of vulkano_text
-//TODO Fix/Impl lighting
+//TODO Use glyph-brush for text
+//TODO Use Warmy for resource loading
+//TODO Serialize scenes from file
 
 fn main() {
     env_logger::init();
@@ -52,20 +53,6 @@ fn main() {
     // Create entities
     world.create_entity().with(Transform::default()).build();
 
-    // Plane
-    // world
-    //     .create_entity()
-    //     .with(Transform {
-    //         position: Vector3::new(0.0, 0.0, -3.0),
-    //         rotation: UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_4, 0.0),
-    //         ..Transform::default()
-    //     })
-    //     .with(MeshComponent::from_shape(
-    //         renderer.device.clone(),
-    //         Shape::Plane(None),
-    //     ))
-    //     .build();
-
     let parent = world
         .create_entity()
         .with(Transform::from(Vector3::new(1.0, 0.0, -10.0)))
@@ -76,6 +63,20 @@ fn main() {
         .create_entity()
         .with(Link::new(parent))
         .with(Transform::default())
+        .with(MeshBuilder::from_shape(Shape::Sphere(100, 100)))
+        .build();
+
+    // Cylinder
+    world
+        .create_entity()
+        .with(Transform::from(Vector3::new(5.0, 1.0, -7.0)))
+        .with(MeshBuilder::from_shape(Shape::Cylinder(40, Some(30))))
+        .build();
+
+    // Cube
+    world
+        .create_entity()
+        .with(Transform::from(Vector3::new(-2.0, -4.0, 5.0)))
         .with(MeshBuilder::from_shape(Shape::Cube))
         .build();
 
