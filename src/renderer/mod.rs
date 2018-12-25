@@ -379,6 +379,7 @@ impl<'a> System<'a> for Renderer {
 
         for (mesh, transform) in (&meshes, &transform_matrixes).join() {
             let new_uniforms = VertexInput {
+                view_pos: camera_t.iso.translation.vector.into(),
                 model: transform.mat.into(),
                 view: view.into(),
                 proj: camera.projection(),
@@ -404,6 +405,7 @@ impl<'a> System<'a> for Renderer {
             (&entities, &mut mesh_builders, &transform_matrixes).join()
         {
             let vertex_data = VertexInput {
+                view_pos: camera_t.iso.translation.vector.into(),
                 model: transform.mat.into(),
                 view: view.into(),
                 proj: camera.projection(),
@@ -432,7 +434,7 @@ impl<'a> System<'a> for Renderer {
                 AutoCommandBufferBuilder::secondary_graphics_one_time_submit(
                     self.device.clone(),
                     self.queues.present.family(),
-                    Subpass::from(self.render_pass.clone(), 0).unwrap(),
+                    self.graphics_pipeline.clone().subpass(),
                 )
                 .unwrap()
                 .draw(
