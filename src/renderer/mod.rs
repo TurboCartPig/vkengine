@@ -392,6 +392,8 @@ impl<'a> System<'a> for Renderer {
         let buffer_update_cb = buffer_update_cb.build().unwrap();
         let frame_future = frame_future
             .then_execute(self.queues.present.clone(), buffer_update_cb)
+            .unwrap()
+            .then_signal_semaphore_and_flush()
             .unwrap();
 
         // Mesh building
