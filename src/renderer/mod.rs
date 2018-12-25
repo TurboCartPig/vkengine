@@ -565,7 +565,7 @@ fn new_instance() -> Arc<instance::Instance> {
             "VK_LAYER_LUNARG_standard_validation",
             //"VK_LAYER_LUNARG_vktrace",
             //"VK_LAYER_VALVE_steam_overlay",
-            "VK_LAYER_RENDERDOC_Capture",
+            //"VK_LAYER_RENDERDOC_Capture",
         ];
 
         if log_enabled!(Level::Info) {
