@@ -25,7 +25,7 @@ use std::{
     mem,
     ops::{Deref, DerefMut},
     rc::Rc,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 use vulkano::{
     app_info_from_cargo_toml,
@@ -33,14 +33,17 @@ use vulkano::{
     buffer::BufferUsage,
     command_buffer::{AutoCommandBufferBuilder, DynamicState},
     descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
-    device::{Device, DeviceExtensions, Features},
+    device::{Device, DeviceExtensions, Features, Queue},
     format::Format,
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
+    image::ImageUsage,
     image::{attachment::AttachmentImage, SwapchainImage},
     instance::{self, Instance, InstanceExtensions, PhysicalDevice, PhysicalDeviceType},
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     single_pass_renderpass,
     swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
+    swapchain::{CompositeAlpha, PresentMode},
+    sync::SharingMode,
     sync::{self, FlushError, GpuFuture},
     VulkanObject,
 };
@@ -55,7 +58,7 @@ pub struct SendSyncContext {
 unsafe impl Send for SendSyncContext {}
 unsafe impl Sync for SendSyncContext {}
 
-pub trait VulkanoWindow {
+trait VulkanoWindow {
     fn vulkano_surface(&self, instance: Arc<Instance>) -> Surface;
 }
 
@@ -70,7 +73,7 @@ impl VulkanoWindow for SdlWindow {
                 instance,
                 surface,
                 SendSyncContext {
-                    _context: self.context(),
+                    _context: self.context().clone(),
                 },
             )
         };
@@ -120,12 +123,15 @@ pub struct Renderer {
             >,
         >,
     >,
+
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     graphics_pipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
     dynamic_state: DynamicState,
+
     depth_buffer: Arc<AttachmentImage>,
-    uniform_buffer_pool: CpuBufferPool<shaders::VertexInput>,
+    uniform_buffer_pool: CpuBufferPool<VertexInput>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
+
     previous_frame_end: Box<GpuFuture + Send + Sync>,
     event_reader: Option<ReaderId<RenderEvent>>,
     should_render: bool,
@@ -136,7 +142,7 @@ impl Renderer {
     pub fn new(window: &SdlWindow) -> Self {
         let instance = new_instance();
 
-        // We regiser the debug callback early in case something happens during init
+        // We register the debug callback early in case something happens during init
         let _debug = Debug::from_instance(&instance);
 
         let surface = window.vulkano_surface(instance.clone()).clone();
@@ -144,7 +150,7 @@ impl Renderer {
         let (device, queues) = new_device_and_queues(instance.clone(), surface.clone());
 
         let (swapchain, images) =
-            new_swapchain_and_images(device.clone(), surface.clone(), &queues);
+            new_swapchain_and_images(device.clone(), surface.clone(), queues.present.clone());
 
         let framebuffers = None;
 
@@ -348,7 +354,7 @@ impl<'a> System<'a> for Renderer {
                 Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
             };
 
-        let frame_future = frame_future.join(acquired_future);
+        // let frame_future = frame_future.join(acquired_future);
 
         // Camera
         // ----------------------------------------------------------------------------------------------------------------------
@@ -367,7 +373,7 @@ impl<'a> System<'a> for Renderer {
 
         let mut buffer_update_cb = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
-            self.queues.general.family(),
+            self.queues.present.family(),
         )
         .unwrap();
 
@@ -385,7 +391,7 @@ impl<'a> System<'a> for Renderer {
 
         let buffer_update_cb = buffer_update_cb.build().unwrap();
         let frame_future = frame_future
-            .then_execute(self.queues.general.clone(), buffer_update_cb)
+            .then_execute(self.queues.present.clone(), buffer_update_cb)
             .unwrap();
 
         // Mesh building
@@ -416,13 +422,14 @@ impl<'a> System<'a> for Renderer {
         // Drawing
         // --------------------------------------------------------------------------------------------------------------------------
 
-        let secondary_command_buffers = RwLock::new(Vec::with_capacity(2usize));
+        // TODO Find a way to count the meshes
+        let mut secondary_command_buffers = Vec::with_capacity(2usize);
 
         for mesh in (&meshes).join() {
             let secondary_command_buffer =
                 AutoCommandBufferBuilder::secondary_graphics_one_time_submit(
                     self.device.clone(),
-                    self.queues.general.family(),
+                    self.queues.present.family(),
                     Subpass::from(self.render_pass.clone(), 0).unwrap(),
                 )
                 .unwrap()
@@ -437,18 +444,13 @@ impl<'a> System<'a> for Renderer {
                 .build()
                 .unwrap();
 
-            {
-                let mut scbg = secondary_command_buffers.write().unwrap();
-                scbg.push(secondary_command_buffer);
-            }
+            secondary_command_buffers.push(secondary_command_buffer);
         }
-
-        let secondary_command_buffers = secondary_command_buffers.into_inner().unwrap();
 
         let command_buffer = {
             let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
-                self.queues.general.family(),
+                self.queues.present.family(),
             )
             .unwrap()
             .begin_render_pass(
@@ -469,10 +471,12 @@ impl<'a> System<'a> for Renderer {
         };
 
         let present_future = frame_future
-            .then_execute(self.queues.general.clone(), command_buffer)
+            .join(acquired_future)
+            .then_execute(self.queues.present.clone(), command_buffer)
             .unwrap()
+            // .then_signal_semaphore()
             .then_swapchain_present(
-                self.queues.general.clone(),
+                self.queues.present.clone(),
                 self.swapchain.clone(),
                 image_number,
             )
@@ -785,19 +789,13 @@ fn new_device_and_queues(
 fn new_swapchain_and_images(
     device: Arc<Device>,
     surface: Surface,
-    queues: &queues::Queues,
+    queue: Arc<Queue>,
 ) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
-    use vulkano::{
-        image::ImageUsage,
-        swapchain::{CompositeAlpha, PresentMode, Swapchain},
-        sync::SharingMode,
-    };
-
     let capabilities = surface
         .capabilities(device.physical_device())
         .expect("Failed to get surface capabilities");
 
-    //info!("Surface capabilities: {:?}\n", capabilities);
+    info!("Surface capabilities: {:?}\n", capabilities);
 
     let buffer_count = max(
         capabilities.min_image_count,
@@ -808,7 +806,7 @@ fn new_swapchain_and_images(
 
     // First available format
     let format = capabilities.supported_formats[0].0;
-    info!("Supported formats: {:?}", capabilities.supported_formats);
+    // info!("Supported formats: {:?}", capabilities.supported_formats);
 
     // Current extent seems to be the screen res normaly
     // FIXME The dimensions dont match the inner window size
@@ -821,7 +819,7 @@ fn new_swapchain_and_images(
     };
 
     // Only our present queue needs access to this image
-    let sharing_mode = SharingMode::Exclusive(queues.present.family().id());
+    let sharing_mode = SharingMode::Exclusive(queue.family().id());
 
     // We dont need support for flipping the window or anything similar
     let transform = capabilities.current_transform;
@@ -904,19 +902,18 @@ fn build_graphics_pipeline(
     render_pass: Arc<RenderPassAbstract + Send + Sync>,
     shaders: &ShaderSet,
 ) -> Arc<GraphicsPipelineAbstract + Send + Sync> {
-    let pipeline = Arc::new(
+    Arc::new(
         GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
             .vertex_shader(shaders.vertex.main_entry_point(), ())
             .triangle_list()
             //.polygon_mode_line()
             .viewports_dynamic_scissors_irrelevant(1)
+            .cull_mode_back()
             .fragment_shader(shaders.fragment.main_entry_point(), ())
             .depth_stencil_simple_depth()
             .render_pass(Subpass::from(render_pass, 0).unwrap())
             .build(device.clone())
             .unwrap(),
-    );
-
-    pipeline
+    )
 }
