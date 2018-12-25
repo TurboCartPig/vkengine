@@ -56,13 +56,33 @@ pub enum Shape {
 #[derive(Component)]
 #[storage(HashMapStorage)]
 pub struct MeshBuilder {
-    data: Vec<Vertex>,
+    shape: Shape,
     uniforms: Option<VertexInput>,
 }
 
 impl MeshBuilder {
     pub fn from_shape(shape: Shape) -> Self {
-        let vertex_data = match shape {
+        Self {
+            shape,
+            uniforms: None,
+        }
+    }
+
+    pub fn with_uniforms(&mut self, data: VertexInput) -> &mut Self {
+        self.uniforms = Some(data);
+
+        self
+    }
+
+    pub fn build(
+        &mut self,
+        device: Arc<Device>,
+        uniform_pool: &CpuBufferPool<VertexInput>,
+        descriptor_set_pool: &mut FixedSizeDescriptorSetsPool<
+            Arc<GraphicsPipelineAbstract + Send + Sync>,
+        >,
+    ) -> MeshComponent {
+        let vertex_data = match self.shape {
             Shape::Sphere(u, v) => generate_v(SphereUv::new(u, v)),
             Shape::Cone(u) => generate_v(Cone::new(u)),
             Shape::Cube => generate_v(Cube::new()),
@@ -93,30 +113,10 @@ impl MeshBuilder {
             Shape::Circle(u) => generate_v(Circle::new(u)),
         };
 
-        Self {
-            data: vertex_data,
-            uniforms: None,
-        }
-    }
-
-    pub fn with_uniforms(&mut self, data: VertexInput) -> &mut Self {
-        self.uniforms = Some(data);
-
-        self
-    }
-
-    pub fn build(
-        &mut self,
-        device: Arc<Device>,
-        uniform_pool: &CpuBufferPool<VertexInput>,
-        descriptor_set_pool: &mut FixedSizeDescriptorSetsPool<
-            Arc<GraphicsPipelineAbstract + Send + Sync>,
-        >,
-    ) -> MeshComponent {
         let vertex_buffer = CpuAccessibleBuffer::from_iter(
             device.clone(),
             BufferUsage::vertex_buffer(),
-            self.data.iter().cloned(),
+            vertex_data.iter().cloned(),
         )
         .expect("Failed to create vertex buffer");
 
