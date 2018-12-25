@@ -902,6 +902,10 @@ fn build_graphics_pipeline(
     render_pass: Arc<RenderPassAbstract + Send + Sync>,
     shaders: &ShaderSet,
 ) -> Arc<GraphicsPipelineAbstract + Send + Sync> {
+    let sc = shaders::FragSC {
+        gamma: 2.2,
+    };
+
     Arc::new(
         GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
@@ -910,7 +914,7 @@ fn build_graphics_pipeline(
             //.polygon_mode_line()
             .viewports_dynamic_scissors_irrelevant(1)
             .cull_mode_back()
-            .fragment_shader(shaders.fragment.main_entry_point(), ())
+            .fragment_shader(shaders.fragment.main_entry_point(), sc)
             .depth_stencil_simple_depth()
             .render_pass(Subpass::from(render_pass, 0).unwrap())
             .build(device.clone())

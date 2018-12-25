@@ -1,5 +1,7 @@
 #version 450
 
+layout(constant_id = 0) const float gamma = 2.2;
+
 layout(location = 0) in vec3 v_normal;
 
 layout(location = 0) out vec4 f_color;

@@ -2,7 +2,9 @@ use std::sync::Arc;
 use vulkano::device::Device;
 
 /// export the uniform input of the vertex shader
-pub use crate::renderer::shaders::vertex::ty::Data as VertexInput;
+pub use self::vertex::ty::Data as VertexInput;
+pub use self::vertex::SpecializationConstants as VertexSC;
+pub use self::fragment::SpecializationConstants as FragSC;
 
 pub struct ShaderSet {
     pub vertex: vertex::Shader,
