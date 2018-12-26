@@ -393,7 +393,7 @@ impl<'a> System<'a> for Renderer {
             };
 
             let frag = FragInput {
-                view_pos: camera_t.iso.translation.vector.into(),
+                view_pos: camera_t.translation().into(),
             };
 
             buffer_update_cb = buffer_update_cb
@@ -424,7 +424,7 @@ impl<'a> System<'a> for Renderer {
             };
 
             let frag = FragInput {
-                view_pos: camera_t.iso.translation.vector.into(),
+                view_pos: camera_t.iso.translation().into(),
             };
 
             let mesh = builder

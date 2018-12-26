@@ -52,6 +52,14 @@ impl Transform {
             .append_nonuniform_scaling(&inverse_scale)
     }
 
+    pub fn translation(&self) -> &Vector3<f32> {
+        &self.iso.translation.vector
+    }
+
+    pub fn rotation(&self) -> &UnitQuaternion<f32> {
+        &self.iso.rotation
+    }
+
     pub fn translate(&mut self, t: Vector3<f32>) {
         if t != zero() {
             self.iso.translation.vector += self.iso.rotation * t;
