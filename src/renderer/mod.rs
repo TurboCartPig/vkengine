@@ -14,6 +14,7 @@ use crate::{
         queues::{QueueFamilyIds, QueueFamilyTypes},
         shaders::ShaderSet,
         shaders::VertexInput,
+        shaders::FragInput,
     },
 };
 use log::{error, info, log_enabled, warn, Level};
@@ -129,7 +130,9 @@ pub struct Renderer {
     dynamic_state: DynamicState,
 
     depth_buffer: Arc<AttachmentImage>,
-    uniform_buffer_pool: CpuBufferPool<VertexInput>,
+    // uniform_buffer_pool: CpuBufferPool<VertexInput>,
+    vertex_input_pool: CpuBufferPool<VertexInput>,
+    frag_input_pool: CpuBufferPool<FragInput>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
 
     previous_frame_end: Box<GpuFuture + Send + Sync>,
@@ -178,10 +181,13 @@ impl Renderer {
         let graphics_pipeline =
             build_graphics_pipeline(device.clone(), render_pass.clone(), &shaders);
 
-        let uniform_buffer_pool = CpuBufferPool::<VertexInput>::new(
-            device.clone(),
-            BufferUsage::uniform_buffer_transfer_destination(),
-        );
+        // let uniform_buffer_pool = CpuBufferPool::<VertexInput>::new(
+        //     device.clone(),
+        //     BufferUsage::uniform_buffer_transfer_destination(),
+        // );
+
+        let vertex_input_pool = CpuBufferPool::<VertexInput>::new(device.clone(), BufferUsage::uniform_buffer_transfer_destination());
+        let frag_input_pool = CpuBufferPool::<FragInput>::new(device.clone(), BufferUsage::uniform_buffer_transfer_destination());
 
         let descriptor_set_pool = FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0);
 
@@ -200,7 +206,9 @@ impl Renderer {
             graphics_pipeline,
             dynamic_state,
             depth_buffer,
-            uniform_buffer_pool,
+            // uniform_buffer_pool,
+            vertex_input_pool,
+            frag_input_pool,
             descriptor_set_pool,
             previous_frame_end,
             event_reader: None,
@@ -378,15 +386,20 @@ impl<'a> System<'a> for Renderer {
         .unwrap();
 
         for (mesh, transform) in (&meshes, &transform_matrixes).join() {
-            let new_uniforms = VertexInput {
-                view_pos: camera_t.iso.translation.vector.into(),
+            let vertex = VertexInput {
                 model: transform.mat.into(),
                 view: view.into(),
                 proj: camera.projection(),
             };
 
+            let frag = FragInput {
+                view_pos: camera_t.iso.translation.vector.into(),
+            };
+
             buffer_update_cb = buffer_update_cb
-                .update_buffer(mesh.uniform_buffer.clone(), new_uniforms)
+                .update_buffer(mesh.vertex_uniforms.clone(), vertex)
+                .unwrap()
+                .update_buffer(mesh.frag_uniforms.clone(), frag)
                 .unwrap();
         }
 
@@ -404,17 +417,25 @@ impl<'a> System<'a> for Renderer {
         for (entity, builder, transform) in
             (&entities, &mut mesh_builders, &transform_matrixes).join()
         {
-            let vertex_data = VertexInput {
-                view_pos: camera_t.iso.translation.vector.into(),
+            let vertex = VertexInput {
                 model: transform.mat.into(),
                 view: view.into(),
                 proj: camera.projection(),
             };
 
-            let mesh = builder.with_uniforms(vertex_data).build(
-                self.device.clone(),
-                &self.uniform_buffer_pool,
-                &mut self.descriptor_set_pool,
+            let frag = FragInput {
+                view_pos: camera_t.iso.translation.vector.into(),
+            };
+
+            let mesh = builder
+                .build(
+                    self.device.clone(),
+                    // &self.uniform_buffer_pool,
+                    &self.vertex_input_pool,
+                    &self.frag_input_pool,
+                    vertex,
+                    frag,
+                    &mut self.descriptor_set_pool,
             );
 
             meshes.insert(entity, mesh).unwrap();

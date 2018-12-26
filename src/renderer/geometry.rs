@@ -1,4 +1,4 @@
-use crate::renderer::shaders::VertexInput;
+use crate::renderer::shaders::{VertexInput, FragInput};
 use genmesh::{
     generators::{
         Circle, Cone, Cube, Cylinder, IcoSphere, IndexedPolygon, Plane, SharedVertex, SphereUv,
@@ -57,27 +57,23 @@ pub enum Shape {
 #[storage(HashMapStorage)]
 pub struct MeshBuilder {
     shape: Shape,
-    uniforms: Option<VertexInput>,
 }
 
 impl MeshBuilder {
     pub fn from_shape(shape: Shape) -> Self {
         Self {
             shape,
-            uniforms: None,
         }
-    }
-
-    pub fn with_uniforms(&mut self, data: VertexInput) -> &mut Self {
-        self.uniforms = Some(data);
-
-        self
     }
 
     pub fn build(
         &mut self,
         device: Arc<Device>,
-        uniform_pool: &CpuBufferPool<VertexInput>,
+        // uniform_pool: &CpuBufferPool<VertexInput>,
+        vertex_input_pool: &CpuBufferPool<VertexInput>,
+        frag_input_pool: &CpuBufferPool<FragInput>,
+        vertex_input: VertexInput,
+        frag_input: FragInput,
         descriptor_set_pool: &mut FixedSizeDescriptorSetsPool<
             Arc<GraphicsPipelineAbstract + Send + Sync>,
         >,
@@ -120,12 +116,18 @@ impl MeshBuilder {
         )
         .expect("Failed to create vertex buffer");
 
-        let uniform_buffer = Arc::new(uniform_pool.next(self.uniforms.unwrap()).unwrap());
+        // let uniform_buffer = Arc::new(uniform_pool.next(self.uniforms.unwrap()).unwrap());
+
+        let vertex_uniforms = Arc::new(vertex_input_pool.next(vertex_input).unwrap());
+        let frag_uniforms = Arc::new(frag_input_pool.next(frag_input).unwrap());
 
         let descriptor_set = Arc::new(
             descriptor_set_pool
                 .next()
-                .add_buffer(uniform_buffer.clone())
+                // .add_buffer(uniform_buffer.clone())
+                .add_buffer(vertex_uniforms.clone())
+                .unwrap()
+                .add_buffer(frag_uniforms.clone())
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -133,7 +135,9 @@ impl MeshBuilder {
 
         MeshComponent {
             vertex_buffer,
-            uniform_buffer,
+            // uniform_buffer,
+            vertex_uniforms,
+            frag_uniforms,
             descriptor_set,
         }
     }
@@ -144,7 +148,9 @@ impl MeshBuilder {
 pub struct MeshComponent {
     pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     // pub index_buffer: Arc<CpuAccessibleBuffer<[u16]>>,
-    pub uniform_buffer: Arc<CpuBufferPoolSubbuffer<VertexInput, Arc<StdMemoryPool>>>,
+    // pub uniform_buffer: Arc<CpuBufferPoolSubbuffer<VertexInput, Arc<StdMemoryPool>>>,
+    pub vertex_uniforms: Arc<CpuBufferPoolSubbuffer<VertexInput, Arc<StdMemoryPool>>>,
+    pub frag_uniforms: Arc<CpuBufferPoolSubbuffer<FragInput, Arc<StdMemoryPool>>>,
     pub descriptor_set: Arc<DescriptorSet + Send + Sync>,
 }
 

@@ -2,7 +2,11 @@ use std::sync::Arc;
 use vulkano::device::Device;
 
 /// export the uniform input of the vertex shader
-pub use self::vertex::ty::Data as VertexInput;
+pub use self::vertex::ty::MVP as VertexInput;
+pub use self::fragment::ty::Input as FragInput;
+
+// pub use self::fragment::ty::Material;
+
 pub use self::vertex::SpecializationConstants as VertexSC;
 pub use self::fragment::SpecializationConstants as FragSC;
 
@@ -26,6 +30,7 @@ mod vertex {
 
     shader! {
         ty: "vertex",
+        include: ["shaders"],
         path: "shaders/basic.vert"
     }
 }
@@ -35,6 +40,7 @@ mod fragment {
 
     shader! {
         ty: "fragment",
+        include: ["shaders"],
         path: "shaders/basic.frag"
     }
 }
