@@ -1,14 +1,13 @@
 use crate::components::{GlobalTransform, Link, Transform};
-use hibitset::BitSet;
 use specs::prelude::*;
 use specs_hierarchy::{Hierarchy, HierarchyEvent, Parent};
+use crate::resources::DirtyEntities;
 
-/// Syncs Transform and TransformMatrix per entity
+/// Syncs Transform and GobalTransform per entity
 ///
-/// For every Transform, whether relative or absolute, there should be a TransformMatrix
-/// that contains the transform matrix for said Transform.
+/// For every Transform, whether relative or absolute, there should be a GlobalTransform
+/// that contains the global transform for said Transform.
 pub struct TransformSystem {
-    dirty: BitSet,
     transform_reader_id: Option<ReaderId<ComponentEvent>>,
     hierarchy_reader_id: Option<ReaderId<HierarchyEvent>>,
 }
@@ -16,13 +15,17 @@ pub struct TransformSystem {
 impl<'a> System<'a> for TransformSystem {
     type SystemData = (
         Entities<'a>,
+        Write<'a, DirtyEntities>,
         ReadExpect<'a, Hierarchy<Link>>,
         ReadStorage<'a, Link>,
         ReadStorage<'a, Transform>,
         WriteStorage<'a, GlobalTransform>,
     );
 
-    fn run(&mut self, (entities, hierarchy, links, transforms, mut globals): Self::SystemData) {
+    fn run(&mut self, (entities, mut dirty_entities, hierarchy, links, transforms, mut globals): Self::SystemData) {
+        // Reset
+        dirty_entities.dirty.clear();
+
         // Add TransformMatrix component to all entities with Transforms
         (&entities, &transforms, !globals.mask().clone())
             .join()
@@ -31,7 +34,7 @@ impl<'a> System<'a> for TransformSystem {
                     // .insert(entity, TransformMatrix::from(transform.to_matrix()))
                     .insert(entity, GlobalTransform::from(transform.clone()))
                     .unwrap();
-                self.dirty.add(entity.id());
+                dirty_entities.dirty.add(entity.id());
             });
 
         // Read events
@@ -40,9 +43,11 @@ impl<'a> System<'a> for TransformSystem {
             .channel()
             .read(self.transform_reader_id.as_mut().unwrap())
             .for_each(|event| match *event {
-                ComponentEvent::Removed(_) => (),
+                ComponentEvent::Removed(id) => {
+                    let _ = globals.remove(entities.entity(id));
+                }
                 ComponentEvent::Inserted(id) | ComponentEvent::Modified(id) => {
-                    self.dirty.add(id);
+                    dirty_entities.dirty.add(id);
                 }
             });
 
@@ -55,20 +60,20 @@ impl<'a> System<'a> for TransformSystem {
                     let _ = entities.delete(entity);
                 }
                 HierarchyEvent::Modified(entity) => {
-                    self.dirty.add(entity.id());
+                    dirty_entities.dirty.add(entity.id());
                 }
             });
 
         // Children of dirty entities are also dirty and need their matrices synced
-        (&entities, &transforms, &globals, &self.dirty.clone())
+        (&entities, &transforms, &globals, &dirty_entities.dirty.clone())
             .join()
             .for_each(|(entity, _, _, _)| {
                 let children = hierarchy.all_children(entity);
-                self.dirty |= &children;
+                dirty_entities.dirty |= &children;
             });
 
         // Sync all dirty entities and their children
-        (&entities, &transforms, &mut globals, &self.dirty)
+        (&entities, &transforms, &mut globals, &dirty_entities.dirty)
             .join()
             .for_each(|(entity, transform, global, _)| {
                 // matrix.mat = transform.to_matrix();
@@ -84,9 +89,6 @@ impl<'a> System<'a> for TransformSystem {
                     }
                 }
             });
-
-        // Reset
-        self.dirty.clear();
     }
 
     fn setup(&mut self, res: &mut Resources) {
@@ -103,7 +105,6 @@ impl<'a> System<'a> for TransformSystem {
 impl Default for TransformSystem {
     fn default() -> Self {
         Self {
-            dirty: BitSet::new(),
             transform_reader_id: None,
             hierarchy_reader_id: None,
         }

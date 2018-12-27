@@ -5,6 +5,7 @@ layout(constant_id = 0) const float gamma = 2.2;
 
 layout(location = 0) in vec3 v_normal;
 layout(location = 1) in vec3 v_frag_pos;
+layout(location = 2) in vec3 v_view_pos;
 
 layout(location = 0) out vec4 f_color;
 
@@ -13,22 +14,22 @@ layout(set = 0, binding = 1) uniform Input {
 } stuff;
 
 const DirectionalLight LIGHT = DirectionalLight(
-		vec3(1.0), 				// Direction
-		vec3(0.1), 				// Ambient
-		vec3(0.5, 1.0, 0.5), 	// Diffuse
-		vec3(1.0) 				// Specular
-	);
+	vec3(1.0), 				// Direction
+	vec3(0.2), 				// Ambient
+	vec3(0.7, 1.0, 0.7), 	// Diffuse
+	vec3(1.0) 				// Specular
+);
 
 const Material MATERIAL = Material(
-		vec3(0.0, 0.0, 1.0),	// Diffuse
-		vec3(1.0),				// Specular
-		64.0					// Shininess
-	);
+	vec3(0.0, 0.0, 1.0),	// Diffuse
+	vec3(1.0),				// Specular
+	64.0					// Shininess
+);
 
 vec3 directional_light(DirectionalLight light, vec3 normal, vec3 view_dir, Material mat) {
-	normal = normalize(normal);
+    normal = normalize(normal);
 	view_dir = normalize(view_dir);
-	vec3 light_dir = normalize(-light.direction);
+	vec3 light_dir = normalize(light.direction);
 
 	// Diffuse
     float brightness = max(dot(normal, light_dir), 0.0);
@@ -45,7 +46,7 @@ vec3 directional_light(DirectionalLight light, vec3 normal, vec3 view_dir, Mater
 }
 
 void main() {
-	vec3 view_dir = normalize(stuff.view_pos - v_frag_pos);
+	vec3 view_dir = v_view_pos - v_frag_pos;
 	vec3 color = directional_light(LIGHT, v_normal, view_dir, MATERIAL);
 	f_color = vec4(color, 1.0);
 }

@@ -1,4 +1,5 @@
 use sdl2::keyboard::Mod;
+use specs::BitSet;
 use shrev::EventChannel;
 use std::ops::{Deref, DerefMut};
 
@@ -42,6 +43,11 @@ impl Default for Time {
             timescale: 1.,
         }
     }
+}
+
+#[derive(Default)]
+pub struct DirtyEntities {
+    pub dirty: BitSet,
 }
 
 /// Resource for signaling that the user has asked to close the game

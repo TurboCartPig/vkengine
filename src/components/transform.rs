@@ -1,15 +1,17 @@
 use nalgebra::{zero, Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
 use specs::prelude::*;
-use specs_derive::Component;
 use std::ops::AddAssign;
 use std::ops::Deref;
 use std::ops::DerefMut;
 
 /// A Wrapper around the local and the global transform
-#[derive(Component, Clone, Debug, Default, PartialEq)]
-#[storage(VecStorage)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GlobalTransform {
     pub global: Transform,
+}
+
+impl Component for GlobalTransform {
+    type Storage = FlaggedStorage<Self, VecStorage<Self>>;
 }
 
 impl Deref for GlobalTransform {

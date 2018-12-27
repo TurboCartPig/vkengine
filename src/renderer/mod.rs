@@ -6,7 +6,7 @@ mod queues;
 mod shaders;
 
 use crate::{
-    components::{Transform, GlobalTransform},
+    components::GlobalTransform,
     renderer::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
@@ -15,7 +15,9 @@ use crate::{
         shaders::FragInput,
         shaders::ShaderSet,
         shaders::VertexInput,
+        shaders::PushConstants,
     },
+    resources::DirtyEntities,
 };
 use log::{error, info, log_enabled, warn, Level};
 use sdl2::video::{Window as SdlWindow, WindowContext};
@@ -294,12 +296,13 @@ impl Renderer {
 impl<'a> System<'a> for Renderer {
     type SystemData = (
         Entities<'a>,
+        Read<'a, RenderEvents>,
+        Read<'a, DirtyEntities>,
         WriteStorage<'a, MeshComponent>,
         ReadStorage<'a, GlobalTransform>,
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, MeshBuilder>,
         WriteStorage<'a, Camera>,
-        Read<'a, RenderEvents>,
     );
 
     /// The main draw/render function
@@ -307,12 +310,13 @@ impl<'a> System<'a> for Renderer {
         &mut self,
         (
             entities,
+            render_events,
+            dirty_entities,
             mut meshes,
             globals,
             active_cameras,
             mut mesh_builders,
             mut cameras,
-            render_events,
         ): Self::SystemData,
     ) {
         // Cleanup
@@ -366,20 +370,15 @@ impl<'a> System<'a> for Renderer {
                 Err(err) => panic!("Error occurred while acquiring next image: {:?}", err),
             };
 
-        // let frame_future = frame_future.join(acquired_future);
-
         // Camera
         // ----------------------------------------------------------------------------------------------------------------------
-        let (_, camera, camera_t) = (&active_cameras, &mut cameras, &globals)
+        let (camera, camera_t, _) = (&mut cameras, &globals, &active_cameras)
             .join()
             .next()
             .unwrap();
 
         let dimensions = self.swapchain.dimensions();
         camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
-
-        // let view = camera_t.to_matrix();
-        let view = camera_t.to_view_matrix();
 
         // Update uniforms
         // ----------------------------------------------------------------------------------------------------------
@@ -390,12 +389,10 @@ impl<'a> System<'a> for Renderer {
         )
         .unwrap();
 
-        for (mesh, global) in (&meshes, &globals).join() {
+        for (mesh, global, _) in (&meshes, &globals, &dirty_entities.dirty).join() {
             let vertex = VertexInput {
                 // model: global.to_view_matrix().into(),
                 model: global.to_matrix().into(),
-                view: view.into(),
-                proj: camera.projection(),
             };
 
             let frag = FragInput {
@@ -420,14 +417,10 @@ impl<'a> System<'a> for Renderer {
         //---------------------------------------------------------------------------------------------------------------
 
         // Build mesh components from mesh builders
-        for (entity, builder, global) in
-            (&entities, &mut mesh_builders, &globals).join()
-        {
+        for (entity, builder, global) in (&entities, &mut mesh_builders, &globals).join() {
             let vertex = VertexInput {
                 // model: global.to_view_matrix().into(),
                 model: global.to_matrix().into(),
-                view: view.into(),
-                proj: camera.projection(),
             };
 
             let frag = FragInput {
@@ -450,6 +443,14 @@ impl<'a> System<'a> for Renderer {
         // All meshes are built and we can get rid of builders
         mesh_builders.clear();
 
+        // Push constants
+        // --------------------------------------------------------------------------------------------------------------------------
+        
+        let pc = PushConstants {
+            view: camera_t.to_view_matrix().into(),
+            proj: camera.projection(),
+        };
+
         // Drawing
         // --------------------------------------------------------------------------------------------------------------------------
 
@@ -469,7 +470,7 @@ impl<'a> System<'a> for Renderer {
                     &self.dynamic_state,
                     vec![mesh.vertex_buffer.clone()],
                     mesh.descriptor_set.clone(),
-                    (),
+                    pc,
                 )
                 .unwrap()
                 .build()

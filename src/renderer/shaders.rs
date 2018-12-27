@@ -5,6 +5,7 @@ use vulkano::device::Device;
 pub use self::vertex::ty::MVP as VertexInput;
 pub use self::fragment::ty::Input as FragInput;
 
+pub use self::vertex::ty::PushConstants;
 // pub use self::fragment::ty::Material;
 
 pub use self::vertex::SpecializationConstants as VertexSC;
