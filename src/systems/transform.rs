@@ -1,4 +1,4 @@
-use crate::components::{Link, Transform, TransformMatrix};
+use crate::components::{GlobalTransform, Link, Transform};
 use hibitset::BitSet;
 use specs::prelude::*;
 use specs_hierarchy::{Hierarchy, HierarchyEvent, Parent};
@@ -19,16 +19,17 @@ impl<'a> System<'a> for TransformSystem {
         ReadExpect<'a, Hierarchy<Link>>,
         ReadStorage<'a, Link>,
         ReadStorage<'a, Transform>,
-        WriteStorage<'a, TransformMatrix>,
+        WriteStorage<'a, GlobalTransform>,
     );
 
-    fn run(&mut self, (entities, hierarchy, links, transforms, mut matrices): Self::SystemData) {
+    fn run(&mut self, (entities, hierarchy, links, transforms, mut globals): Self::SystemData) {
         // Add TransformMatrix component to all entities with Transforms
-        (&entities, &transforms, !matrices.mask().clone())
+        (&entities, &transforms, !globals.mask().clone())
             .join()
             .for_each(|(entity, transform, _)| {
-                matrices
-                    .insert(entity, TransformMatrix::from(transform.to_matrix()))
+                globals
+                    // .insert(entity, TransformMatrix::from(transform.to_matrix()))
+                    .insert(entity, GlobalTransform::from(transform.clone()))
                     .unwrap();
                 self.dirty.add(entity.id());
             });
@@ -59,7 +60,7 @@ impl<'a> System<'a> for TransformSystem {
             });
 
         // Children of dirty entities are also dirty and need their matrices synced
-        (&entities, &transforms, &matrices, &self.dirty.clone())
+        (&entities, &transforms, &globals, &self.dirty.clone())
             .join()
             .for_each(|(entity, _, _, _)| {
                 let children = hierarchy.all_children(entity);
@@ -67,16 +68,19 @@ impl<'a> System<'a> for TransformSystem {
             });
 
         // Sync all dirty entities and their children
-        (&entities, &transforms, &mut matrices, &self.dirty)
+        (&entities, &transforms, &mut globals, &self.dirty)
             .join()
-            .for_each(|(entity, transform, matrix, _)| {
-                matrix.mat = transform.to_matrix();
+            .for_each(|(entity, transform, global, _)| {
+                // matrix.mat = transform.to_matrix();
+                global.global = transform.clone();
 
                 let mut parent_entity = entity;
                 while let Some(link) = links.get(parent_entity) {
                     parent_entity = link.parent_entity();
                     if let Some(p_trans) = transforms.get(parent_entity) {
-                        matrix.mat = p_trans.to_matrix() * matrix.mat;
+                        // matrix.mat = p_trans.to_matrix() * matrix.mat;
+                        // global += p_trans;
+                        global.global += p_trans.clone();
                     }
                 }
             });
@@ -109,7 +113,7 @@ impl Default for TransformSystem {
 #[cfg(test)]
 mod test {
     use crate::{
-        components::{Link, Transform, TransformMatrix},
+        components::{GlobalTransform, Link, Transform},
         systems::TransformSystem,
     };
     use nalgebra::Vector3;
@@ -122,7 +126,7 @@ mod test {
         let transform_sys = TransformSystem::default();
 
         world.register::<Transform>();
-        world.register::<TransformMatrix>();
+        world.register::<GlobalTransform>();
         world.register::<Link>();
 
         let mut dispatcher = DispatcherBuilder::new()
@@ -146,11 +150,11 @@ mod test {
         dispatcher.dispatch(&world.res);
 
         let sys_mat = world
-            .read_storage::<TransformMatrix>()
+            .read_storage::<GlobalTransform>()
             .get(e1)
             .unwrap()
-            .clone()
-            .mat;
+            .to_matrix();
+
         let tra_mat = tra.to_matrix();
 
         assert_eq!(sys_mat, tra_mat);
@@ -176,17 +180,17 @@ mod test {
         dispatcher.dispatch(&world.res);
 
         let abs_tra_e1 = world
-            .read_storage::<TransformMatrix>()
+            .read_storage::<GlobalTransform>()
             .get(e1)
             .unwrap()
-            .mat
-            .clone();
+            .to_matrix();
+
         let abs_tra_e2 = world
-            .read_storage::<TransformMatrix>()
+            .read_storage::<GlobalTransform>()
             .get(e2)
             .unwrap()
-            .mat
-            .clone();
+            .to_matrix();
+
         let abs_tra = tra.to_matrix() * tra.to_matrix();
 
         // The absolute matricies should no longer be equal

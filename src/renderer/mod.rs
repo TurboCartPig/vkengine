@@ -6,15 +6,15 @@ mod queues;
 mod shaders;
 
 use crate::{
-    components::{Transform, TransformMatrix},
+    components::{Transform, GlobalTransform},
     renderer::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
         geometry::{MeshBuilder, MeshComponent, Vertex},
         queues::{QueueFamilyIds, QueueFamilyTypes},
+        shaders::FragInput,
         shaders::ShaderSet,
         shaders::VertexInput,
-        shaders::FragInput,
     },
 };
 use log::{error, info, log_enabled, warn, Level};
@@ -186,8 +186,14 @@ impl Renderer {
         //     BufferUsage::uniform_buffer_transfer_destination(),
         // );
 
-        let vertex_input_pool = CpuBufferPool::<VertexInput>::new(device.clone(), BufferUsage::uniform_buffer_transfer_destination());
-        let frag_input_pool = CpuBufferPool::<FragInput>::new(device.clone(), BufferUsage::uniform_buffer_transfer_destination());
+        let vertex_input_pool = CpuBufferPool::<VertexInput>::new(
+            device.clone(),
+            BufferUsage::uniform_buffer_transfer_destination(),
+        );
+        let frag_input_pool = CpuBufferPool::<FragInput>::new(
+            device.clone(),
+            BufferUsage::uniform_buffer_transfer_destination(),
+        );
 
         let descriptor_set_pool = FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0);
 
@@ -289,8 +295,7 @@ impl<'a> System<'a> for Renderer {
     type SystemData = (
         Entities<'a>,
         WriteStorage<'a, MeshComponent>,
-        ReadStorage<'a, Transform>,
-        ReadStorage<'a, TransformMatrix>,
+        ReadStorage<'a, GlobalTransform>,
         ReadStorage<'a, ActiveCamera>,
         WriteStorage<'a, MeshBuilder>,
         WriteStorage<'a, Camera>,
@@ -303,8 +308,7 @@ impl<'a> System<'a> for Renderer {
         (
             entities,
             mut meshes,
-            transforms,
-            transform_matrixes,
+            globals,
             active_cameras,
             mut mesh_builders,
             mut cameras,
@@ -366,7 +370,7 @@ impl<'a> System<'a> for Renderer {
 
         // Camera
         // ----------------------------------------------------------------------------------------------------------------------
-        let (_, camera, camera_t) = (&active_cameras, &mut cameras, &transforms)
+        let (_, camera, camera_t) = (&active_cameras, &mut cameras, &globals)
             .join()
             .next()
             .unwrap();
@@ -374,6 +378,7 @@ impl<'a> System<'a> for Renderer {
         let dimensions = self.swapchain.dimensions();
         camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
 
+        // let view = camera_t.to_matrix();
         let view = camera_t.to_view_matrix();
 
         // Update uniforms
@@ -385,15 +390,16 @@ impl<'a> System<'a> for Renderer {
         )
         .unwrap();
 
-        for (mesh, transform) in (&meshes, &transform_matrixes).join() {
+        for (mesh, global) in (&meshes, &globals).join() {
             let vertex = VertexInput {
-                model: transform.mat.into(),
+                // model: global.to_view_matrix().into(),
+                model: global.to_matrix().into(),
                 view: view.into(),
                 proj: camera.projection(),
             };
 
             let frag = FragInput {
-                view_pos: camera_t.translation().into(),
+                view_pos: camera_t.translation().clone().into(),
             };
 
             buffer_update_cb = buffer_update_cb
@@ -414,28 +420,28 @@ impl<'a> System<'a> for Renderer {
         //---------------------------------------------------------------------------------------------------------------
 
         // Build mesh components from mesh builders
-        for (entity, builder, transform) in
-            (&entities, &mut mesh_builders, &transform_matrixes).join()
+        for (entity, builder, global) in
+            (&entities, &mut mesh_builders, &globals).join()
         {
             let vertex = VertexInput {
-                model: transform.mat.into(),
+                // model: global.to_view_matrix().into(),
+                model: global.to_matrix().into(),
                 view: view.into(),
                 proj: camera.projection(),
             };
 
             let frag = FragInput {
-                view_pos: camera_t.iso.translation().into(),
+                view_pos: camera_t.translation().clone().into(),
             };
 
-            let mesh = builder
-                .build(
-                    self.device.clone(),
-                    // &self.uniform_buffer_pool,
-                    &self.vertex_input_pool,
-                    &self.frag_input_pool,
-                    vertex,
-                    frag,
-                    &mut self.descriptor_set_pool,
+            let mesh = builder.build(
+                self.device.clone(),
+                // &self.uniform_buffer_pool,
+                &self.vertex_input_pool,
+                &self.frag_input_pool,
+                vertex,
+                frag,
+                &mut self.descriptor_set_pool,
             );
 
             meshes.insert(entity, mesh).unwrap();
@@ -927,9 +933,7 @@ fn build_graphics_pipeline(
     render_pass: Arc<RenderPassAbstract + Send + Sync>,
     shaders: &ShaderSet,
 ) -> Arc<GraphicsPipelineAbstract + Send + Sync> {
-    let sc = shaders::FragSC {
-        gamma: 2.2,
-    };
+    let sc = shaders::FragSC { gamma: 2.2 };
 
     Arc::new(
         GraphicsPipeline::start()

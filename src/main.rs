@@ -4,7 +4,7 @@ mod resources;
 mod systems;
 
 use crate::{
-    components::{Link, Transform, TransformMatrix},
+    components::{Link, Transform, GlobalTransform},
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{MeshBuilder, MeshComponent, Shape},
@@ -36,7 +36,7 @@ fn main() {
     // Register components
     world.register::<Link>();
     world.register::<Transform>();
-    world.register::<TransformMatrix>();
+    world.register::<GlobalTransform>();
     world.register::<MeshComponent>();
     world.register::<MeshBuilder>();
     world.register::<ActiveCamera>();
@@ -58,7 +58,7 @@ fn main() {
         .with(Transform::from(Vector3::new(1.0, 0.0, -10.0)))
         .build();
 
-    // Cube
+    // Sphere
     world
         .create_entity()
         .with(Link::new(parent))
@@ -90,7 +90,6 @@ fn main() {
 
     // Create dispatcher
     let mut dispatcher = DispatcherBuilder::new()
-        // .with(PrintSystem::default(), "print", &[])
         .with(TimeSystem::default(), "time", &[])
         .with(HierarchySystem::<Link>::new(), "hierarchy", &[])
         .with(TransformSystem::default(), "transform", &["hierarchy"])

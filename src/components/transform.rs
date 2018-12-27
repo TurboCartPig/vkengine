@@ -1,25 +1,34 @@
 use nalgebra::{zero, Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
 use specs::prelude::*;
 use specs_derive::Component;
+use std::ops::AddAssign;
+use std::ops::Deref;
+use std::ops::DerefMut;
 
-/// Absolute transform matrix
-#[derive(Component, Clone, Debug, PartialEq)]
+/// A Wrapper around the local and the global transform
+#[derive(Component, Clone, Debug, Default, PartialEq)]
 #[storage(VecStorage)]
-pub struct TransformMatrix {
-    pub mat: Matrix4<f32>,
+pub struct GlobalTransform {
+    pub global: Transform,
 }
 
-impl From<Matrix4<f32>> for TransformMatrix {
-    fn from(mat: Matrix4<f32>) -> Self {
-        Self { mat }
+impl Deref for GlobalTransform {
+    type Target = Transform;
+
+    fn deref(&self) -> &Self::Target {
+        &self.global
     }
 }
 
-impl Default for TransformMatrix {
-    fn default() -> Self {
-        Self {
-            mat: Matrix4::identity(),
-        }
+impl DerefMut for GlobalTransform {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.global
+    }
+}
+
+impl From<Transform> for GlobalTransform {
+    fn from(global: Transform) -> Self {
+        Self { global }
     }
 }
 
@@ -34,10 +43,6 @@ pub struct Transform {
 
 impl Transform {
     pub fn to_matrix(&self) -> Matrix4<f32> {
-        // Matrix4::new_nonuniform_scaling(&self.scale)
-        //     * Matrix4::new_rotation(self.rotation.scaled_axis())
-        //     * Matrix4::new_translation(&self.position)
-
         self.iso
             .to_homogeneous()
             .prepend_nonuniform_scaling(&self.scale)
@@ -58,6 +63,10 @@ impl Transform {
 
     pub fn rotation(&self) -> &UnitQuaternion<f32> {
         &self.iso.rotation
+    }
+
+    pub fn scale(&self) -> &Vector3<f32> {
+        &self.scale
     }
 
     pub fn translate(&mut self, t: Vector3<f32>) {
@@ -93,9 +102,15 @@ impl Component for Transform {
     type Storage = FlaggedStorage<Self, VecStorage<Self>>;
 }
 
-impl Into<Matrix4<f32>> for Transform {
-    fn into(self) -> Matrix4<f32> {
-        self.to_matrix()
+impl AddAssign<Transform> for Transform {
+    fn add_assign(&mut self, other: Transform) {
+        self.iso.translation.vector += other.iso.translation.vector;
+        self.iso.rotation *= other.iso.rotation;
+        self.scale = Vector3::new(
+            self.scale.x * other.scale.x,
+            self.scale.y * other.scale.y,
+            self.scale.z * other.scale.z,
+        );
     }
 }
 
