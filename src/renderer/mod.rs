@@ -12,14 +12,9 @@ use crate::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
         geometry::{MeshBuilder, MeshComponent, Vertex},
-        lights::DirectionalLightRes,
-        lights::PointLightComponent,
+        lights::{DirectionalLightRes, PointLightComponent},
         queues::{QueueFamilyIds, QueueFamilyTypes},
-        shaders::Lights,
-        shaders::PointLight,
-        shaders::PushConstants,
-        shaders::ShaderSet,
-        shaders::VertexInput,
+        shaders::{Lights, PointLight, PushConstants, ShaderSet, VertexInput},
     },
     resources::DirtyEntities,
 };
@@ -27,8 +22,7 @@ use log::{error, info, log_enabled, warn, Level};
 use nalgebra::Vector3;
 use sdl2::video::{Window as SdlWindow, WindowContext};
 use shrev::{EventChannel, ReaderId};
-use specs::join::JoinIter;
-use specs::prelude::*;
+use specs::{join::JoinIter, prelude::*};
 use std::{
     cmp::{max, min},
     mem,
@@ -38,23 +32,23 @@ use std::{
 };
 use vulkano::{
     app_info_from_cargo_toml,
-    buffer::cpu_pool::CpuBufferPool,
-    buffer::{BufferUsage, CpuAccessibleBuffer},
+    buffer::{cpu_pool::CpuBufferPool, BufferUsage, CpuAccessibleBuffer},
     command_buffer::{AutoCommandBufferBuilder, DynamicState},
-    descriptor::descriptor_set::{FixedSizeDescriptorSetsPool, PersistentDescriptorSet},
-    descriptor::DescriptorSet,
+    descriptor::{
+        descriptor_set::{FixedSizeDescriptorSetsPool, PersistentDescriptorSet},
+        DescriptorSet,
+    },
     device::{Device, DeviceExtensions, Features, Queue},
     format::Format,
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
-    image::ImageUsage,
-    image::{attachment::AttachmentImage, SwapchainImage},
+    image::{attachment::AttachmentImage, ImageUsage, SwapchainImage},
     instance::{self, Instance, InstanceExtensions, PhysicalDevice, PhysicalDeviceType},
     pipeline::{viewport::Viewport, GraphicsPipeline, GraphicsPipelineAbstract},
     single_pass_renderpass,
-    swapchain::{self, AcquireError, Swapchain, SwapchainCreationError},
-    swapchain::{CompositeAlpha, PresentMode},
-    sync::SharingMode,
-    sync::{self, FlushError, GpuFuture},
+    swapchain::{
+        self, AcquireError, CompositeAlpha, PresentMode, Swapchain, SwapchainCreationError,
+    },
+    sync::{self, FlushError, GpuFuture, SharingMode},
     VulkanObject,
 };
 

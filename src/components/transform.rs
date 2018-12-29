@@ -1,8 +1,6 @@
 use nalgebra::{zero, Isometry3, Matrix4, Translation3, UnitQuaternion, Vector3};
 use specs::prelude::*;
-use std::ops::AddAssign;
-use std::ops::Deref;
-use std::ops::DerefMut;
+use std::ops::{AddAssign, Deref, DerefMut};
 
 /// A Wrapper around the local and the global transform
 #[derive(Clone, Debug, Default, PartialEq)]

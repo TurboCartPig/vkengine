@@ -12,7 +12,8 @@ use specs_derive::Component;
 use std::{fmt::Debug, sync::Arc};
 use vulkano::{
     buffer::{
-        cpu_pool::CpuBufferPool, cpu_pool::CpuBufferPoolSubbuffer, BufferUsage, CpuAccessibleBuffer,
+        cpu_pool::{CpuBufferPool, CpuBufferPoolSubbuffer},
+        BufferUsage, CpuAccessibleBuffer,
     },
     descriptor::descriptor_set::{DescriptorSet, FixedSizeDescriptorSetsPool},
     device::Device,
@@ -193,10 +194,7 @@ where
         .map(|Triangle { x, y, z }| [x as u16, y as u16, z as u16])
         .collect::<Vec<_>>();
 
-    let indecies = indecies.iter()
-        .flatten()
-        .map(|i| *i)
-        .collect();
+    let indecies = indecies.iter().flatten().map(|i| *i).collect();
 
     let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
 

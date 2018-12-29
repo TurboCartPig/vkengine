@@ -1,6 +1,6 @@
 use sdl2::keyboard::Mod;
-use specs::BitSet;
 use shrev::EventChannel;
+use specs::BitSet;
 use std::ops::{Deref, DerefMut};
 
 pub use sdl2::{

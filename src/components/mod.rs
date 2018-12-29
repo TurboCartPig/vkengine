@@ -1,6 +1,6 @@
 mod transform;
 
-pub use crate::components::transform::{Transform, GlobalTransform};
+pub use crate::components::transform::{GlobalTransform, Transform};
 
 use specs::prelude::*;
 use specs_hierarchy::Parent;

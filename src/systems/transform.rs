@@ -1,5 +1,7 @@
-use crate::components::{GlobalTransform, Link, Transform};
-use crate::resources::DirtyEntities;
+use crate::{
+    components::{GlobalTransform, Link, Transform},
+    resources::DirtyEntities,
+};
 use specs::prelude::*;
 use specs_hierarchy::{Hierarchy, HierarchyEvent, Parent};
 

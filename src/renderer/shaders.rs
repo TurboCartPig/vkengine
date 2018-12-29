@@ -4,17 +4,16 @@ use vulkano::device::Device;
 /// export the uniform input of the vertex shader
 pub use self::vertex::ty::MVP as VertexInput;
 // Structs from the fragment shader
-pub use self::fragment::ty::DirectionalLight;
-pub use self::fragment::ty::PointLight;
+pub use self::fragment::ty::{DirectionalLight, PointLight};
 // Uniforms from the fragment shader
-pub use self::fragment::ty::Lights;
-pub use self::fragment::ty::PointLights;
+pub use self::fragment::ty::{Lights, PointLights};
 // pub use self::fragment::ty::Material;
 
 pub use self::vertex::ty::PushConstants;
 
-pub use self::fragment::SpecializationConstants as FragSC;
-pub use self::vertex::SpecializationConstants as VertexSC;
+pub use self::{
+    fragment::SpecializationConstants as FragSC, vertex::SpecializationConstants as VertexSC,
+};
 
 pub struct ShaderSet {
     pub vertex: vertex::Shader,

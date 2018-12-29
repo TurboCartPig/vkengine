@@ -11,9 +11,10 @@ use crate::{
         lights::{DirectionalLightRes, PointLightComponent},
         RenderEvents, Renderer,
     },
-    resources::{FocusGained, KeyboardEvents, ShouldClose, Time, DirtyEntities},
+    resources::{DirtyEntities, FocusGained, KeyboardEvents, ShouldClose, Time},
     systems::{
-        FlyControlSystem, GameInput, GameInputSystem, SDLSystem, TimeSystem, TransformSystem, PlacerSystem,
+        FlyControlSystem, GameInput, GameInputSystem, PlacerSystem, SDLSystem, TimeSystem,
+        TransformSystem,
     },
 };
 use nalgebra::Vector3;

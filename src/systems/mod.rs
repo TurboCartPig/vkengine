@@ -4,7 +4,7 @@ pub use crate::systems::transform::TransformSystem;
 
 use crate::{
     components::Transform,
-    renderer::{camera::ActiveCamera, RenderEvent, RenderEvents, lights::PointLightComponent},
+    renderer::{camera::ActiveCamera, lights::PointLightComponent, RenderEvent, RenderEvents},
     resources::{
         ControllerAxis, ControllerEvent, ControllerEvents, FocusGained, KeyboardEvent,
         KeyboardEvents, Keycode, MouseEvent, MouseEvents, ShouldClose, Time,

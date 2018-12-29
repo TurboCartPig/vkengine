@@ -1,6 +1,6 @@
-use crate::renderer::shaders::{PointLight, DirectionalLight};
-use specs::prelude::*;
+use crate::renderer::shaders::{DirectionalLight, PointLight};
 use nalgebra::Vector3;
+use specs::prelude::*;
 
 #[derive(Debug)]
 pub struct DirectionalLightRes {
@@ -80,17 +80,17 @@ impl PointLightComponent {
 
     pub fn to_point_light(&self, position: Vector3<f32>) -> PointLight {
         PointLight {
-                position: position.into(),
-                constant: self.constant,
-                linear: self.linear,
-                quadratic: self.quadratic,
-                _dummy0: [0; 8],
-                ambient: self.ambient.into(),
-                diffuse: self.diffuse.into(),
-                specular: self.specular.into(),
-                _dummy1: [0; 4],
-                hh: 0,
-                _dummy2: [0; 4],
-            }
+            position: position.into(),
+            constant: self.constant,
+            linear: self.linear,
+            quadratic: self.quadratic,
+            _dummy0: [0; 8],
+            ambient: self.ambient.into(),
+            diffuse: self.diffuse.into(),
+            specular: self.specular.into(),
+            _dummy1: [0; 4],
+            hh: 0,
+            _dummy2: [0; 4],
+        }
     }
 }
