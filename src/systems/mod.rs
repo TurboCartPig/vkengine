@@ -4,7 +4,7 @@ pub use crate::systems::transform::TransformSystem;
 
 use crate::{
     components::Transform,
-    renderer::{camera::ActiveCamera, RenderEvent, RenderEvents},
+    renderer::{camera::ActiveCamera, RenderEvent, RenderEvents, lights::PointLightComponent},
     resources::{
         ControllerAxis, ControllerEvent, ControllerEvents, FocusGained, KeyboardEvent,
         KeyboardEvents, Keycode, MouseEvent, MouseEvents, ShouldClose, Time,
@@ -119,6 +119,7 @@ pub struct GameInput {
     controller_view_ver: Axis,
     mouse_view_hor: f32,
     mouse_view_ver: f32,
+    action_pressed: bool,
 }
 
 impl GameInput {
@@ -188,6 +189,7 @@ impl<'a> System<'a> for GameInputSystem {
                     Keycode::S => input.forward.set(-1.),
                     Keycode::D => input.right.set(1.),
                     Keycode::A => input.right.set(-1.),
+                    Keycode::E => input.action_pressed = true,
                     _ => (),
                 },
                 KeyboardEvent {
@@ -199,6 +201,7 @@ impl<'a> System<'a> for GameInputSystem {
                     Keycode::S => input.forward.set(0.),
                     Keycode::D => input.right.set(0.),
                     Keycode::A => input.right.set(0.),
+                    Keycode::E => input.action_pressed = false,
                     _ => (),
                 },
             });
@@ -275,6 +278,23 @@ impl<'a> System<'a> for FlyControlSystem {
         // ------------------------------------------------------------------------------------------------------------
         camera_t.translate_forward(input.forward.get() * time.delta() as f32);
         camera_t.translate_right(input.right.get() * time.delta() as f32);
+    }
+}
+
+pub struct PlacerSystem;
+
+impl<'a> System<'a> for PlacerSystem {
+    type SystemData = (Entities<'a>, Read<'a, LazyUpdate>, Write<'a, GameInput>);
+
+    fn run(&mut self, (entities, lazy, mut input): Self::SystemData) {
+        if input.action_pressed {
+            input.action_pressed = false;
+
+            lazy.create_entity(&entities)
+                .with(Transform::from(Vector3::new(0.0, 0.0, 0.0)))
+                .with(PointLightComponent::from_color(Vector3::new(0.0, 1.0, 0.0)))
+                .build();
+        }
     }
 }
 

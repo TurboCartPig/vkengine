@@ -1,5 +1,6 @@
 pub mod camera;
 pub mod geometry;
+pub mod lights;
 
 mod debug;
 mod queues;
@@ -11,17 +12,22 @@ use crate::{
         camera::{ActiveCamera, Camera},
         debug::Debug,
         geometry::{MeshBuilder, MeshComponent, Vertex},
+        lights::DirectionalLightRes,
+        lights::PointLightComponent,
         queues::{QueueFamilyIds, QueueFamilyTypes},
-        shaders::FragInput,
+        shaders::Lights,
+        shaders::PointLight,
+        shaders::PushConstants,
         shaders::ShaderSet,
         shaders::VertexInput,
-        shaders::PushConstants,
     },
     resources::DirtyEntities,
 };
 use log::{error, info, log_enabled, warn, Level};
+use nalgebra::Vector3;
 use sdl2::video::{Window as SdlWindow, WindowContext};
 use shrev::{EventChannel, ReaderId};
+use specs::join::JoinIter;
 use specs::prelude::*;
 use std::{
     cmp::{max, min},
@@ -33,9 +39,10 @@ use std::{
 use vulkano::{
     app_info_from_cargo_toml,
     buffer::cpu_pool::CpuBufferPool,
-    buffer::BufferUsage,
+    buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{AutoCommandBufferBuilder, DynamicState},
-    descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
+    descriptor::descriptor_set::{FixedSizeDescriptorSetsPool, PersistentDescriptorSet},
+    descriptor::DescriptorSet,
     device::{Device, DeviceExtensions, Features, Queue},
     format::Format,
     framebuffer::{Framebuffer, RenderPassAbstract, Subpass},
@@ -132,13 +139,15 @@ pub struct Renderer {
     dynamic_state: DynamicState,
 
     depth_buffer: Arc<AttachmentImage>,
-    // uniform_buffer_pool: CpuBufferPool<VertexInput>,
     vertex_input_pool: CpuBufferPool<VertexInput>,
-    frag_input_pool: CpuBufferPool<FragInput>,
+    lights_buffer: Arc<CpuAccessibleBuffer<Lights>>,
+    point_lights_buffer: Arc<CpuAccessibleBuffer<[PointLight]>>,
     descriptor_set_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync>>,
+    shared_descriptor_set: Arc<DescriptorSet + Send + Sync>,
 
     previous_frame_end: Box<GpuFuture + Send + Sync>,
     event_reader: Option<ReaderId<RenderEvent>>,
+    point_lights_reader_id: Option<ReaderId<ComponentEvent>>,
     should_render: bool,
     _debug: Debug,
 }
@@ -162,7 +171,6 @@ impl Renderer {
         let depth_buffer =
             AttachmentImage::transient(device.clone(), swapchain.dimensions(), Format::D16Unorm)
                 .unwrap();
-
         let dynamic_state = DynamicState {
             line_width: None,
             viewports: Some(vec![Viewport {
@@ -183,21 +191,46 @@ impl Renderer {
         let graphics_pipeline =
             build_graphics_pipeline(device.clone(), render_pass.clone(), &shaders);
 
-        // let uniform_buffer_pool = CpuBufferPool::<VertexInput>::new(
-        //     device.clone(),
-        //     BufferUsage::uniform_buffer_transfer_destination(),
-        // );
-
         let vertex_input_pool = CpuBufferPool::<VertexInput>::new(
             device.clone(),
             BufferUsage::uniform_buffer_transfer_destination(),
         );
-        let frag_input_pool = CpuBufferPool::<FragInput>::new(
+
+        let dir_light = DirectionalLightRes::default().to_directional_light();
+
+        let lights = Lights { dir_light };
+
+        let lights_buffer = CpuAccessibleBuffer::from_data(
             device.clone(),
             BufferUsage::uniform_buffer_transfer_destination(),
-        );
+            lights,
+        )
+        .unwrap();
+
+        let point_lights_buffer = {
+            let usage = BufferUsage {
+                storage_buffer: true,
+                ..BufferUsage::none()
+            };
+
+            let point_lights = [PointLightComponent::from_color(Vector3::new(0.0, 0.0, 0.0))
+                .to_point_light(Vector3::new(0.0, 0.0, 0.0))];
+
+            CpuAccessibleBuffer::from_iter(device.clone(), usage, point_lights.iter().cloned())
+                .unwrap()
+        };
 
         let descriptor_set_pool = FixedSizeDescriptorSetsPool::new(graphics_pipeline.clone(), 0);
+
+        let shared_descriptor_set = Arc::new(
+            PersistentDescriptorSet::start(graphics_pipeline.clone(), 1)
+                .add_buffer(lights_buffer.clone())
+                .unwrap()
+                .add_buffer(point_lights_buffer.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
 
         let previous_frame_end = Box::new(sync::now(device.clone())) as Box<_>;
 
@@ -213,13 +246,17 @@ impl Renderer {
             render_pass,
             graphics_pipeline,
             dynamic_state,
+
             depth_buffer,
-            // uniform_buffer_pool,
             vertex_input_pool,
-            frag_input_pool,
+            lights_buffer,
+            point_lights_buffer,
             descriptor_set_pool,
+            shared_descriptor_set,
+
             previous_frame_end,
             event_reader: None,
+            point_lights_reader_id: None,
             should_render,
             _debug,
         }
@@ -291,6 +328,43 @@ impl Renderer {
 
         warn!("Framebuffers recreated");
     }
+
+    /// Creates a new buffer for point lights and a new descriptor set that includes it, and
+    /// replace the old ones on the renderer
+    fn upload_point_lights(
+        &mut self,
+        iter: JoinIter<(
+            &ReadStorage<'_, PointLightComponent>,
+            &ReadStorage<'_, GlobalTransform>,
+        )>,
+    ) {
+        let usage = BufferUsage {
+            storage_buffer: true,
+            ..BufferUsage::none()
+        };
+
+        let lights = iter
+            .map(|(light, global)| light.to_point_light(global.translation().clone()))
+            .inspect(|light| println!("Light processed"))
+            .collect::<Vec<PointLight>>();
+
+        let buffer =
+            CpuAccessibleBuffer::from_iter(self.device.clone(), usage, lights.into_iter())
+                .unwrap();
+
+        let descriptor_set = Arc::new(
+            PersistentDescriptorSet::start(self.graphics_pipeline.clone(), 1)
+                .add_buffer(self.lights_buffer.clone())
+                .unwrap()
+                .add_buffer(buffer.clone())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+
+        self.point_lights_buffer = buffer;
+        self.shared_descriptor_set = descriptor_set;
+    }
 }
 
 impl<'a> System<'a> for Renderer {
@@ -298,9 +372,11 @@ impl<'a> System<'a> for Renderer {
         Entities<'a>,
         Read<'a, RenderEvents>,
         Read<'a, DirtyEntities>,
-        WriteStorage<'a, MeshComponent>,
+        Read<'a, DirectionalLightRes>,
+        ReadStorage<'a, PointLightComponent>,
         ReadStorage<'a, GlobalTransform>,
         ReadStorage<'a, ActiveCamera>,
+        WriteStorage<'a, MeshComponent>,
         WriteStorage<'a, MeshBuilder>,
         WriteStorage<'a, Camera>,
     );
@@ -312,9 +388,11 @@ impl<'a> System<'a> for Renderer {
             entities,
             render_events,
             dirty_entities,
-            mut meshes,
+            directional_light,
+            point_lights,
             globals,
             active_cameras,
+            mut meshes,
             mut mesh_builders,
             mut cameras,
         ): Self::SystemData,
@@ -328,7 +406,8 @@ impl<'a> System<'a> for Renderer {
         mem::swap(&mut frame_future, &mut self.previous_frame_end);
 
         // Handle render events
-        // --------------------------------------------------------------------------------------------------------
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
         render_events
             .read(self.event_reader.as_mut().unwrap())
             .for_each(|event| {
@@ -357,7 +436,8 @@ impl<'a> System<'a> for Renderer {
         }
 
         // Acquire image to draw final frame to
-        // ------------------------------------------------------------------------------------------------------------
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
         let (image_number, acquired_future) =
             match swapchain::acquire_next_image(self.swapchain.clone(), None) {
                 Ok(ret) => ret,
@@ -371,159 +451,231 @@ impl<'a> System<'a> for Renderer {
             };
 
         // Camera
-        // ----------------------------------------------------------------------------------------------------------------------
-        let (camera, camera_t, _) = (&mut cameras, &globals, &active_cameras)
-            .join()
-            .next()
-            .unwrap();
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
 
-        let dimensions = self.swapchain.dimensions();
-        camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
+        let (camera, camera_t) = {
+            // FIXME What if there is more than one camera?
+            let (camera, camera_t, _) = (&mut cameras, &globals, &active_cameras)
+                .join()
+                .next()
+                .unwrap();
+
+            let dimensions = self.swapchain.dimensions();
+            camera.update_aspect({ dimensions[0] as f32 / dimensions[1] as f32 });
+
+            (camera, camera_t)
+        };
 
         // Update uniforms
-        // ----------------------------------------------------------------------------------------------------------
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
 
-        let mut buffer_update_cb = AutoCommandBufferBuilder::primary_one_time_submit(
-            self.device.clone(),
-            self.queues.present.family(),
-        )
-        .unwrap();
-
-        for (mesh, global, _) in (&meshes, &globals, &dirty_entities.dirty).join() {
-            let vertex = VertexInput {
-                // model: global.to_view_matrix().into(),
-                model: global.to_matrix().into(),
-            };
-
-            let frag = FragInput {
-                view_pos: camera_t.translation().clone().into(),
-            };
-
-            buffer_update_cb = buffer_update_cb
-                .update_buffer(mesh.vertex_uniforms.clone(), vertex)
-                .unwrap()
-                .update_buffer(mesh.frag_uniforms.clone(), frag)
-                .unwrap();
-        }
-
-        let buffer_update_cb = buffer_update_cb.build().unwrap();
-        let frame_future = frame_future
-            .then_execute(self.queues.present.clone(), buffer_update_cb)
-            .unwrap()
-            .then_signal_semaphore_and_flush()
+        let frame_future = {
+            let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queues.present.family(),
+            )
             .unwrap();
 
-        // Mesh building
-        //---------------------------------------------------------------------------------------------------------------
+            let command_buffer = (&meshes, &globals, &dirty_entities.dirty)
+                .join()
+                .fold(command_buffer, |command_buffer, (mesh, global, _)| {
+                    let vertex = VertexInput {
+                        // model: global.to_view_matrix().into(),
+                        model: global.to_matrix().into(),
+                    };
 
-        // Build mesh components from mesh builders
-        for (entity, builder, global) in (&entities, &mut mesh_builders, &globals).join() {
-            let vertex = VertexInput {
-                // model: global.to_view_matrix().into(),
-                model: global.to_matrix().into(),
+                    command_buffer
+                        .update_buffer(mesh.vertex_uniforms.clone(), vertex)
+                        .unwrap()
+                })
+                .build()
+                .unwrap();
+
+            frame_future
+                .then_execute(self.queues.present.clone(), command_buffer)
+                .unwrap()
+        };
+
+        // Directional light
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        // TODO Find a way to track changes to DirectionalLightRes and only update when there are
+        // changes
+        let frame_future = {
+            let lights = Lights {
+                dir_light: directional_light.to_directional_light(),
             };
 
-            let frag = FragInput {
-                view_pos: camera_t.translation().clone().into(),
-            };
-
-            let mesh = builder.build(
+            // Build a command buffer for updating the lights buffer
+            let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
                 self.device.clone(),
-                // &self.uniform_buffer_pool,
-                &self.vertex_input_pool,
-                &self.frag_input_pool,
-                vertex,
-                frag,
-                &mut self.descriptor_set_pool,
-            );
+                self.queues.present.family(),
+            )
+            .unwrap()
+            .update_buffer(self.lights_buffer.clone(), lights)
+            .unwrap()
+            .build()
+            .unwrap();
 
-            meshes.insert(entity, mesh).unwrap();
+            frame_future
+                .then_execute(self.queues.present.clone(), command_buffer)
+                .unwrap()
+                .then_signal_semaphore_and_flush()
+                .unwrap()
+        };
+
+        // Point lights
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        {
+            let mut should_update = false;
+
+            // TODO Only upload changes
+            point_lights
+                .channel()
+                .read(self.point_lights_reader_id.as_mut().unwrap())
+                .for_each(|event| match *event {
+                    // ComponentEvent::Removed(id) => should_update = true,
+                    // ComponentEvent::Inserted(id) => should_update = true,
+                    // ComponentEvent::Modified(id) => should_update = true,
+                    _ => {
+                        println!("Point lights event recived");
+                        should_update = true;
+                    }
+                });
+
+            // If we should update the point lights, build a new buffer and a new descriptor set,
+            // and replace the current ones
+            if should_update {
+                self.upload_point_lights((&point_lights, &globals).join());
+            }
         }
 
-        // All meshes are built and we can get rid of builders
-        mesh_builders.clear();
+        // Mesh building
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        {
+            // Build mesh components from mesh builders
+            for (entity, builder, global) in (&entities, &mut mesh_builders, &globals).join() {
+                let vertex = VertexInput {
+                    // model: global.to_view_matrix().into(),
+                    model: global.to_matrix().into(),
+                };
+
+                let mesh = builder.build(
+                    self.device.clone(),
+                    &self.vertex_input_pool,
+                    vertex,
+                    &mut self.descriptor_set_pool,
+                );
+
+                meshes.insert(entity, mesh).unwrap();
+            }
+
+            // All meshes are built and we can get rid of builders
+            mesh_builders.clear();
+        }
 
         // Push constants
-        // --------------------------------------------------------------------------------------------------------------------------
-        
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
         let pc = PushConstants {
             view: camera_t.to_view_matrix().into(),
             proj: camera.projection(),
         };
 
         // Drawing
-        // --------------------------------------------------------------------------------------------------------------------------
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
 
-        // TODO Find a way to count the meshes
-        let mut secondary_command_buffers = Vec::with_capacity(2usize);
+        // Build a primary command buffer builder
+        let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
+            self.device.clone(),
+            self.queues.present.family(),
+        )
+        .unwrap()
+        .begin_render_pass(
+            self.framebuffers.as_ref().unwrap()[image_number].clone(),
+            true, // This makes it so that we can execute secondary command buffers
+            vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
+        )
+        .unwrap();
 
-        for mesh in (&meshes).join() {
-            let secondary_command_buffer =
-                AutoCommandBufferBuilder::secondary_graphics_one_time_submit(
-                    self.device.clone(),
-                    self.queues.present.family(),
-                    self.graphics_pipeline.clone().subpass(),
-                )
-                .unwrap()
-                .draw(
-                    self.graphics_pipeline.clone(),
-                    &self.dynamic_state,
-                    vec![mesh.vertex_buffer.clone()],
+        // Build secondary command buffers and execute them in the primary command buffer.
+        // Then build the primary command buffer
+        let secondary_command_buffers = (&meshes)
+            .par_join()
+            .map(|mesh| {
+                let descriptor_sets = vec![
                     mesh.descriptor_set.clone(),
-                    pc,
-                )
-                .unwrap()
-                .build()
-                .unwrap();
+                    self.shared_descriptor_set.clone(),
+                ];
 
-            secondary_command_buffers.push(secondary_command_buffer);
-        }
+                let secondary_command_buffer =
+                    AutoCommandBufferBuilder::secondary_graphics_one_time_submit(
+                        self.device.clone(),
+                        self.queues.present.family(),
+                        self.graphics_pipeline.clone().subpass(),
+                    )
+                    .unwrap()
+                    .draw(
+                        self.graphics_pipeline.clone(),
+                        &self.dynamic_state,
+                        vec![mesh.vertex_buffer.clone()],
+                        descriptor_sets,
+                        pc,
+                    )
+                    .unwrap()
+                    .build()
+                    .unwrap();
 
-        let command_buffer = {
-            let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
-                self.device.clone(),
-                self.queues.present.family(),
+                secondary_command_buffer
+            })
+            .collect::<Vec<_>>();
+
+        let command_buffer = secondary_command_buffers.into_iter()
+            .fold(
+                command_buffer,
+                |command_buffer, secondary_command_buffer| {
+                    let command_buffer = unsafe {
+                        command_buffer
+                            .execute_commands(secondary_command_buffer)
+                            .unwrap()
+                    };
+
+                    command_buffer
+                },
             )
+            .end_render_pass()
             .unwrap()
-            .begin_render_pass(
-                self.framebuffers.as_ref().unwrap()[image_number].clone(),
-                true, // This makes it so that we can execute secondary command buffers
-                vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()],
-            )
+            .build()
             .unwrap();
 
-            unsafe {
-                // Execute all the secondary command buffers
-                for scb in secondary_command_buffers {
-                    command_buffer = command_buffer.execute_commands(scb).unwrap();
+        // Presenting
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        let frame_future = {
+            let present_future = frame_future
+                .join(acquired_future)
+                .then_execute(self.queues.present.clone(), command_buffer)
+                .unwrap()
+                .then_swapchain_present(
+                    self.queues.present.clone(),
+                    self.swapchain.clone(),
+                    image_number,
+                )
+                .then_signal_fence_and_flush();
+
+            match present_future {
+                Ok(future) => Box::new(future) as Box<GpuFuture + Send + Sync>,
+                Err(FlushError::OutOfDate) => {
+                    error!("Swapchain out of date");
+                    self.recreate_swapchain().unwrap();
+                    Box::new(sync::now(self.device.clone())) as Box<_>
                 }
-            }
-
-            command_buffer.end_render_pass().unwrap().build().unwrap()
-        };
-
-        let present_future = frame_future
-            .join(acquired_future)
-            .then_execute(self.queues.present.clone(), command_buffer)
-            .unwrap()
-            // .then_signal_semaphore()
-            .then_swapchain_present(
-                self.queues.present.clone(),
-                self.swapchain.clone(),
-                image_number,
-            )
-            .then_signal_fence_and_flush();
-
-        let frame_future = match present_future {
-            Ok(future) => Box::new(future) as Box<GpuFuture + Send + Sync>,
-            Err(FlushError::OutOfDate) => {
-                error!("Swapchain out of date");
-                self.recreate_swapchain().unwrap();
-                Box::new(sync::now(self.device.clone())) as Box<_>
-            }
-            Err(err) => {
-                error!("{:?}", err);
-                Box::new(sync::now(self.device.clone())) as Box<_>
+                Err(err) => {
+                    error!("{:?}", err);
+                    Box::new(sync::now(self.device.clone())) as Box<_>
+                }
             }
         };
 
@@ -534,9 +686,21 @@ impl<'a> System<'a> for Renderer {
     fn setup(&mut self, res: &mut Resources) {
         Self::SystemData::setup(res);
 
-        // Fetch the render event channel and register a reader
-        let mut render_events = res.fetch_mut::<RenderEvents>();
-        self.event_reader = Some(render_events.register_reader());
+        // Register readers
+        {
+            let mut render_events = res.fetch_mut::<RenderEvents>();
+            self.event_reader = Some(render_events.register_reader());
+
+            let mut point_lights = WriteStorage::<PointLightComponent>::fetch(res);
+            self.point_lights_reader_id = Some(point_lights.register_reader());
+        }
+
+        let point_lights = ReadStorage::<PointLightComponent>::fetch(res);
+        let globals = ReadStorage::<GlobalTransform>::fetch(res);
+
+        // Upload the point lights that exists before setup() is called. If we don't do this, the
+        // point lights buffer is not in sync with the ecs world
+        self.upload_point_lights((&point_lights, &globals).join());
     }
 }
 

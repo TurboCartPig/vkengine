@@ -1,3 +1,5 @@
+// NOTE GLSL Structs are aligned to 128 bits
+
 struct Material {
     vec3 diffuse;
     vec3 specular;
@@ -23,4 +25,7 @@ struct PointLight {
     vec3 ambient;
     vec3 diffuse;
     vec3 specular;
+
+	// Padding
+	bool hh;
 };

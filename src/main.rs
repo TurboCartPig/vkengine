@@ -4,15 +4,16 @@ mod resources;
 mod systems;
 
 use crate::{
-    components::{Link, Transform, GlobalTransform},
+    components::{GlobalTransform, Link, Transform},
     renderer::{
         camera::{ActiveCamera, Camera},
         geometry::{MeshBuilder, MeshComponent, Shape},
+        lights::{DirectionalLightRes, PointLightComponent},
         RenderEvents, Renderer,
     },
     resources::{FocusGained, KeyboardEvents, ShouldClose, Time},
     systems::{
-        FlyControlSystem, GameInput, GameInputSystem, SDLSystem, TimeSystem, TransformSystem,
+        FlyControlSystem, GameInput, GameInputSystem, SDLSystem, TimeSystem, TransformSystem, PlacerSystem,
     },
 };
 use nalgebra::Vector3;
@@ -41,6 +42,7 @@ fn main() {
     world.register::<MeshBuilder>();
     world.register::<ActiveCamera>();
     world.register::<Camera>();
+    world.register::<PointLightComponent>();
 
     // Add resources
     world.add_resource(Time::default());
@@ -49,6 +51,7 @@ fn main() {
     world.add_resource(GameInput::default());
     world.add_resource(RenderEvents::default());
     world.add_resource(KeyboardEvents::default());
+    world.add_resource(DirectionalLightRes::default());
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
@@ -71,6 +74,7 @@ fn main() {
         .create_entity()
         .with(Transform::from(Vector3::new(5.0, 1.0, -7.0)))
         .with(MeshBuilder::from_shape(Shape::Cylinder(40, Some(30))))
+        .with(PointLightComponent::from_color(Vector3::new(0.0, 0.0, 1.0)))
         .build();
 
     // Cube
@@ -94,7 +98,8 @@ fn main() {
         .with(HierarchySystem::<Link>::new(), "hierarchy", &[])
         .with(TransformSystem::default(), "transform", &["hierarchy"])
         .with(GameInputSystem::default(), "input", &[])
-        .with(FlyControlSystem, "fly", &["time"])
+        .with(FlyControlSystem, "fly", &["time", "input"])
+        .with(PlacerSystem, "placer", &["input"])
         .with(renderer, "renderer", &["time", "transform", "fly"])
         .with_barrier()
         .with_thread_local(sdl)

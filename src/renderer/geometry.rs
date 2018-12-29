@@ -1,4 +1,4 @@
-use crate::renderer::shaders::{VertexInput, FragInput};
+use crate::renderer::shaders::VertexInput;
 use genmesh::{
     generators::{
         Circle, Cone, Cube, Cylinder, IcoSphere, IndexedPolygon, Plane, SharedVertex, SphereUv,
@@ -61,19 +61,14 @@ pub struct MeshBuilder {
 
 impl MeshBuilder {
     pub fn from_shape(shape: Shape) -> Self {
-        Self {
-            shape,
-        }
+        Self { shape }
     }
 
     pub fn build(
         &mut self,
         device: Arc<Device>,
-        // uniform_pool: &CpuBufferPool<VertexInput>,
         vertex_input_pool: &CpuBufferPool<VertexInput>,
-        frag_input_pool: &CpuBufferPool<FragInput>,
         vertex_input: VertexInput,
-        frag_input: FragInput,
         descriptor_set_pool: &mut FixedSizeDescriptorSetsPool<
             Arc<GraphicsPipelineAbstract + Send + Sync>,
         >,
@@ -116,18 +111,12 @@ impl MeshBuilder {
         )
         .expect("Failed to create vertex buffer");
 
-        // let uniform_buffer = Arc::new(uniform_pool.next(self.uniforms.unwrap()).unwrap());
-
         let vertex_uniforms = Arc::new(vertex_input_pool.next(vertex_input).unwrap());
-        let frag_uniforms = Arc::new(frag_input_pool.next(frag_input).unwrap());
 
         let descriptor_set = Arc::new(
             descriptor_set_pool
                 .next()
-                // .add_buffer(uniform_buffer.clone())
                 .add_buffer(vertex_uniforms.clone())
-                .unwrap()
-                .add_buffer(frag_uniforms.clone())
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -135,9 +124,7 @@ impl MeshBuilder {
 
         MeshComponent {
             vertex_buffer,
-            // uniform_buffer,
             vertex_uniforms,
-            frag_uniforms,
             descriptor_set,
         }
     }
@@ -148,9 +135,7 @@ impl MeshBuilder {
 pub struct MeshComponent {
     pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
     // pub index_buffer: Arc<CpuAccessibleBuffer<[u16]>>,
-    // pub uniform_buffer: Arc<CpuBufferPoolSubbuffer<VertexInput, Arc<StdMemoryPool>>>,
     pub vertex_uniforms: Arc<CpuBufferPoolSubbuffer<VertexInput, Arc<StdMemoryPool>>>,
-    pub frag_uniforms: Arc<CpuBufferPoolSubbuffer<FragInput, Arc<StdMemoryPool>>>,
     pub descriptor_set: Arc<DescriptorSet + Send + Sync>,
 }
 
@@ -201,20 +186,17 @@ where
     P: EmitTriangles<Vertex = usize>,
     G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
 {
-    let indexed_polygons = generator
+    // let indexed_polygons = generator
+    let indecies = generator
         .indexed_polygon_iter()
         .triangulate()
-        .map(|Triangle { x, y, z }| (x, y, z))
+        .map(|Triangle { x, y, z }| [x as u16, y as u16, z as u16])
         .collect::<Vec<_>>();
 
-    let mut indecies = Vec::with_capacity(indexed_polygons.len() * 3);
-
-    // FIXME Find a different way to turn Vec<[u16; 3]> into Vec<u16>
-    for (x, y, z) in indexed_polygons {
-        indecies.push(x as u16);
-        indecies.push(y as u16);
-        indecies.push(z as u16);
-    }
+    let indecies = indecies.iter()
+        .flatten()
+        .map(|i| *i)
+        .collect();
 
     let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
 

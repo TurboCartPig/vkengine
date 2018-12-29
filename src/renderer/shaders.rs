@@ -3,13 +3,18 @@ use vulkano::device::Device;
 
 /// export the uniform input of the vertex shader
 pub use self::vertex::ty::MVP as VertexInput;
-pub use self::fragment::ty::Input as FragInput;
-
-pub use self::vertex::ty::PushConstants;
+// Structs from the fragment shader
+pub use self::fragment::ty::DirectionalLight;
+pub use self::fragment::ty::PointLight;
+// Uniforms from the fragment shader
+pub use self::fragment::ty::Lights;
+pub use self::fragment::ty::PointLights;
 // pub use self::fragment::ty::Material;
 
-pub use self::vertex::SpecializationConstants as VertexSC;
+pub use self::vertex::ty::PushConstants;
+
 pub use self::fragment::SpecializationConstants as FragSC;
+pub use self::vertex::SpecializationConstants as VertexSC;
 
 pub struct ShaderSet {
     pub vertex: vertex::Shader,
@@ -32,7 +37,7 @@ mod vertex {
     shader! {
         ty: "vertex",
         include: ["shaders"],
-        path: "shaders/basic.vert"
+        path: "shaders/basic.vert",
     }
 }
 
@@ -42,6 +47,6 @@ mod fragment {
     shader! {
         ty: "fragment",
         include: ["shaders"],
-        path: "shaders/basic.frag"
+        path: "shaders/basic.frag",
     }
 }
