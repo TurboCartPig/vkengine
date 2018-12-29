@@ -3,7 +3,7 @@ mod transform;
 pub use crate::systems::transform::TransformSystem;
 
 use crate::{
-    components::Transform,
+    components::{Transform, GlobalTransform},
     renderer::{camera::ActiveCamera, lights::PointLightComponent, RenderEvent, RenderEvents},
     resources::{
         ControllerAxis, ControllerEvent, ControllerEvents, FocusGained, KeyboardEvent,
@@ -284,14 +284,18 @@ impl<'a> System<'a> for FlyControlSystem {
 pub struct PlacerSystem;
 
 impl<'a> System<'a> for PlacerSystem {
-    type SystemData = (Entities<'a>, Read<'a, LazyUpdate>, Write<'a, GameInput>);
+    type SystemData = (Entities<'a>, Read<'a, LazyUpdate>, Write<'a, GameInput>, ReadStorage<'a, ActiveCamera>, ReadStorage<'a, GlobalTransform>);
 
-    fn run(&mut self, (entities, lazy, mut input): Self::SystemData) {
+    fn run(&mut self, (entities, lazy, mut input, active_camera, globals): Self::SystemData) {
         if input.action_pressed {
             input.action_pressed = false;
 
+            let (camera_t, _) = (&globals, &active_camera).join().next().unwrap();
+            let mut transform = camera_t.clone();
+            transform.translate_forward(5.0);
+
             lazy.create_entity(&entities)
-                .with(Transform::from(Vector3::new(0.0, 0.0, 0.0)))
+                .with(transform)
                 .with(PointLightComponent::from_color(Vector3::new(0.0, 1.0, 0.0)))
                 .build();
         }
