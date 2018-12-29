@@ -10,6 +10,7 @@ pub struct DirectionalLightRes {
     ambient: Vector3<f32>,
     diffuse: Vector3<f32>,
     specular: Vector3<f32>,
+    pub dirty: bool,
 }
 
 impl Default for DirectionalLightRes {
@@ -21,6 +22,7 @@ impl Default for DirectionalLightRes {
             ambient: Vector3::new(1.0, 1.0, 1.0),
             diffuse: Vector3::new(1.0, 1.0, 1.0),
             specular: Vector3::new(1.0, 1.0, 1.0),
+            dirty: true,
         }
     }
 }
@@ -32,6 +34,7 @@ impl DirectionalLightRes {
             ambient: color * 0.2,
             diffuse: color,
             specular: Vector3::new(1.0, 1.0, 1.0),
+            dirty: true,
         }
     }
 

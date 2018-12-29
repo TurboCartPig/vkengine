@@ -364,7 +364,7 @@ impl<'a> System<'a> for Renderer {
         Entities<'a>,
         Read<'a, RenderEvents>,
         Read<'a, DirtyEntities>,
-        Read<'a, DirectionalLightRes>,
+        Write<'a, DirectionalLightRes>,
         ReadStorage<'a, PointLightComponent>,
         ReadStorage<'a, GlobalTransform>,
         ReadStorage<'a, ActiveCamera>,
@@ -380,7 +380,7 @@ impl<'a> System<'a> for Renderer {
             entities,
             render_events,
             dirty_entities,
-            directional_light,
+            mut directional_light,
             point_lights,
             globals,
             active_cameras,
@@ -458,88 +458,6 @@ impl<'a> System<'a> for Renderer {
             (camera, camera_t)
         };
 
-        // Update uniforms
-        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
-
-        let frame_future = {
-            let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
-                self.device.clone(),
-                self.queues.present.family(),
-            )
-            .unwrap();
-
-            let command_buffer = (&meshes, &globals, &dirty_entities.dirty)
-                .join()
-                .fold(command_buffer, |command_buffer, (mesh, global, _)| {
-                    let vertex = VertexInput {
-                        // model: global.to_view_matrix().into(),
-                        model: global.to_matrix().into(),
-                    };
-
-                    command_buffer
-                        .update_buffer(mesh.vertex_uniforms.clone(), vertex)
-                        .unwrap()
-                })
-                .build()
-                .unwrap();
-
-            frame_future
-                .then_execute(self.queues.present.clone(), command_buffer)
-                .unwrap()
-        };
-
-        // Directional light
-        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
-
-        // TODO Find a way to track changes to DirectionalLightRes and only update when there are
-        // changes
-        let frame_future = {
-            let lights = Lights {
-                dir_light: directional_light.to_directional_light(),
-            };
-
-            // Build a command buffer for updating the lights buffer
-            let command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(
-                self.device.clone(),
-                self.queues.present.family(),
-            )
-            .unwrap()
-            .update_buffer(self.lights_buffer.clone(), lights)
-            .unwrap()
-            .build()
-            .unwrap();
-
-            frame_future
-                .then_execute(self.queues.present.clone(), command_buffer)
-                .unwrap()
-                .then_signal_semaphore_and_flush()
-                .unwrap()
-        };
-
-        // Point lights
-        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
-
-        {
-            let mut should_update = false;
-
-            // TODO Only upload changes
-            point_lights
-                .channel()
-                .read(self.point_lights_reader_id.as_mut().unwrap())
-                .for_each(|event| match *event {
-                    _ => {
-                        println!("Point lights event recived");
-                        should_update = true;
-                    }
-                });
-
-            // If we should update the point lights, build a new buffer and a new descriptor set,
-            // and replace the current ones
-            if should_update {
-                self.upload_point_lights((&point_lights, &globals).join());
-            }
-        }
-
         // Mesh building
         // -----------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -563,6 +481,84 @@ impl<'a> System<'a> for Renderer {
 
             // All meshes are built and we can get rid of builders
             mesh_builders.clear();
+        }
+
+        // Update buffers
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        let buffer_update_command_buffer = {
+            let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
+                self.device.clone(),
+                self.queues.present.family(),
+            )
+            .unwrap();
+
+            // Uniforms
+            // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+            builder = (&meshes, &globals, &dirty_entities.dirty).join().fold(
+                builder,
+                |builder, (mesh, global, _)| {
+                    let vertex = VertexInput {
+                        // model: global.to_view_matrix().into(),
+                        model: global.to_matrix().into(),
+                    };
+
+                    builder
+                        .update_buffer(mesh.vertex_uniforms.clone(), vertex)
+                        .unwrap()
+                },
+            );
+
+            // Directional light
+            // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+            // Update the lights buffer if the directional light has changed
+            if directional_light.dirty {
+                directional_light.dirty = false;
+
+                let lights = Lights {
+                    dir_light: directional_light.to_directional_light(),
+                };
+
+                builder = builder
+                    .update_buffer(self.lights_buffer.clone(), lights)
+                    .unwrap();
+            }
+
+            builder.build().unwrap()
+        };
+
+        // Flush and submit command buffers
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        let frame_future = frame_future
+            .then_execute(self.queues.present.clone(), buffer_update_command_buffer)
+            .unwrap()
+            .then_signal_semaphore_and_flush()
+            .unwrap();
+
+        // Point lights
+        // -----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+        {
+            let mut should_update = false;
+
+            // TODO Only upload changes.
+            // Insert and Remove events should be handled as is, but modified events do not require
+            // a new buffer, we can simply write the changes to the buffer
+            point_lights
+                .channel()
+                .read(self.point_lights_reader_id.as_mut().unwrap())
+                .for_each(|event| match *event {
+                    _ => {
+                        should_update = true;
+                    }
+                });
+
+            if should_update {
+                self.upload_point_lights((&point_lights, &globals).join());
+            }
         }
 
         // Push constants
