@@ -345,12 +345,10 @@ impl Renderer {
 
         let lights = iter
             .map(|(light, global)| light.to_point_light(global.translation().clone()))
-            .inspect(|light| println!("Light processed"))
             .collect::<Vec<PointLight>>();
 
         let buffer =
-            CpuAccessibleBuffer::from_iter(self.device.clone(), usage, lights.into_iter())
-                .unwrap();
+            CpuAccessibleBuffer::from_iter(self.device.clone(), usage, lights.into_iter()).unwrap();
 
         let descriptor_set = Arc::new(
             PersistentDescriptorSet::start(self.graphics_pipeline.clone(), 1)
@@ -535,9 +533,6 @@ impl<'a> System<'a> for Renderer {
                 .channel()
                 .read(self.point_lights_reader_id.as_mut().unwrap())
                 .for_each(|event| match *event {
-                    // ComponentEvent::Removed(id) => should_update = true,
-                    // ComponentEvent::Inserted(id) => should_update = true,
-                    // ComponentEvent::Modified(id) => should_update = true,
                     _ => {
                         println!("Point lights event recived");
                         should_update = true;
@@ -632,7 +627,8 @@ impl<'a> System<'a> for Renderer {
             })
             .collect::<Vec<_>>();
 
-        let command_buffer = secondary_command_buffers.into_iter()
+        let command_buffer = secondary_command_buffers
+            .into_iter()
             .fold(
                 command_buffer,
                 |command_buffer, secondary_command_buffer| {
@@ -695,12 +691,14 @@ impl<'a> System<'a> for Renderer {
             self.point_lights_reader_id = Some(point_lights.register_reader());
         }
 
-        let point_lights = ReadStorage::<PointLightComponent>::fetch(res);
-        let globals = ReadStorage::<GlobalTransform>::fetch(res);
-
         // Upload the point lights that exists before setup() is called. If we don't do this, the
         // point lights buffer is not in sync with the ecs world
-        self.upload_point_lights((&point_lights, &globals).join());
+        {
+            let point_lights = ReadStorage::<PointLightComponent>::fetch(res);
+            let globals = ReadStorage::<GlobalTransform>::fetch(res);
+
+            self.upload_point_lights((&point_lights, &globals).join());
+        }
     }
 }
 
