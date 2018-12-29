@@ -11,7 +11,7 @@ use crate::{
         lights::{DirectionalLightRes, PointLightComponent},
         RenderEvents, Renderer,
     },
-    resources::{FocusGained, KeyboardEvents, ShouldClose, Time},
+    resources::{FocusGained, KeyboardEvents, ShouldClose, Time, DirtyEntities},
     systems::{
         FlyControlSystem, GameInput, GameInputSystem, SDLSystem, TimeSystem, TransformSystem, PlacerSystem,
     },
@@ -52,6 +52,7 @@ fn main() {
     world.add_resource(RenderEvents::default());
     world.add_resource(KeyboardEvents::default());
     world.add_resource(DirectionalLightRes::default());
+    world.add_resource(DirtyEntities::default());
 
     // Create entities
     world.create_entity().with(Transform::default()).build();
@@ -112,6 +113,10 @@ fn main() {
     'gameloop: loop {
         dispatcher.dispatch(&world.res);
         world.maintain();
+
+        world.exec(|mut dirty_entities: Write<DirtyEntities>| {
+            dirty_entities.dirty.clear();
+        });
 
         if world.read_resource::<ShouldClose>().0 {
             break 'gameloop;

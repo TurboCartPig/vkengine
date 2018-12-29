@@ -1,7 +1,7 @@
 use crate::components::{GlobalTransform, Link, Transform};
+use crate::resources::DirtyEntities;
 use specs::prelude::*;
 use specs_hierarchy::{Hierarchy, HierarchyEvent, Parent};
-use crate::resources::DirtyEntities;
 
 /// Syncs Transform and GobalTransform per entity
 ///
@@ -10,6 +10,25 @@ use crate::resources::DirtyEntities;
 pub struct TransformSystem {
     transform_reader_id: Option<ReaderId<ComponentEvent>>,
     hierarchy_reader_id: Option<ReaderId<HierarchyEvent>>,
+}
+
+impl TransformSystem {
+    /// Add a GlobalTransform to any entity with a Transform component
+    fn add_globals(
+        entities: &Entities<'_>,
+        transforms: &ReadStorage<'_, Transform>,
+        globals: &mut WriteStorage<'_, GlobalTransform>,
+        dirty_entities: &mut Write<'_, DirtyEntities>,
+    ) {
+        (entities, transforms, !globals.mask().clone())
+            .join()
+            .for_each(|(entity, transform, _)| {
+                globals
+                    .insert(entity, GlobalTransform::from(transform.clone()))
+                    .unwrap();
+                dirty_entities.dirty.add(entity.id());
+            });
+    }
 }
 
 impl<'a> System<'a> for TransformSystem {
@@ -22,20 +41,12 @@ impl<'a> System<'a> for TransformSystem {
         WriteStorage<'a, GlobalTransform>,
     );
 
-    fn run(&mut self, (entities, mut dirty_entities, hierarchy, links, transforms, mut globals): Self::SystemData) {
-        // Reset
-        dirty_entities.dirty.clear();
-
-        // Add TransformMatrix component to all entities with Transforms
-        (&entities, &transforms, !globals.mask().clone())
-            .join()
-            .for_each(|(entity, transform, _)| {
-                globals
-                    // .insert(entity, TransformMatrix::from(transform.to_matrix()))
-                    .insert(entity, GlobalTransform::from(transform.clone()))
-                    .unwrap();
-                dirty_entities.dirty.add(entity.id());
-            });
+    fn run(
+        &mut self,
+        (entities, mut dirty_entities, hierarchy, links, transforms, mut globals): Self::SystemData,
+    ) {
+        // Add GlobalTransforms to entities with Transforms
+        Self::add_globals(&entities, &transforms, &mut globals, &mut dirty_entities);
 
         // Read events
         // Add new or modified entities to dirty bitset
@@ -64,8 +75,13 @@ impl<'a> System<'a> for TransformSystem {
                 }
             });
 
-        // Children of dirty entities are also dirty and need their matrices synced
-        (&entities, &transforms, &globals, &dirty_entities.dirty.clone())
+        // Children of dirty entities are also dirty and need their transforms updated
+        (
+            &entities,
+            &transforms,
+            &globals,
+            &dirty_entities.dirty.clone(),
+        )
             .join()
             .for_each(|(entity, _, _, _)| {
                 let children = hierarchy.all_children(entity);
@@ -76,15 +92,12 @@ impl<'a> System<'a> for TransformSystem {
         (&entities, &transforms, &mut globals, &dirty_entities.dirty)
             .join()
             .for_each(|(entity, transform, global, _)| {
-                // matrix.mat = transform.to_matrix();
                 global.global = transform.clone();
 
                 let mut parent_entity = entity;
                 while let Some(link) = links.get(parent_entity) {
                     parent_entity = link.parent_entity();
                     if let Some(p_trans) = transforms.get(parent_entity) {
-                        // matrix.mat = p_trans.to_matrix() * matrix.mat;
-                        // global += p_trans;
                         global.global += p_trans.clone();
                     }
                 }
@@ -94,11 +107,23 @@ impl<'a> System<'a> for TransformSystem {
     fn setup(&mut self, res: &mut Resources) {
         Self::SystemData::setup(res);
 
-        let mut transforms = WriteStorage::<Transform>::fetch(res);
-        let mut hierarchy = res.fetch_mut::<Hierarchy<Link>>();
+        // Register readers
+        {
+            let mut transforms = WriteStorage::<Transform>::fetch(res);
+            let mut hierarchy = res.fetch_mut::<Hierarchy<Link>>();
 
-        self.transform_reader_id = Some(transforms.register_reader());
-        self.hierarchy_reader_id = Some(hierarchy.track());
+            self.transform_reader_id = Some(transforms.register_reader());
+            self.hierarchy_reader_id = Some(hierarchy.track());
+        }
+
+        // Add GlobalTransforms
+        {
+            let entities = Entities::fetch(res);
+            let transforms = ReadStorage::<Transform>::fetch(res);
+            let mut globals = WriteStorage::<GlobalTransform>::fetch(res);
+            let mut dirty_entities = Write::<DirtyEntities>::fetch(res);
+            Self::add_globals(&entities, &transforms, &mut globals, &mut dirty_entities);
+        }
     }
 }
 
