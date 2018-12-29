@@ -22,7 +22,7 @@ env_logger = "0.6.0"
 
 # Math and physics
 alga = "0.7.2"
-nalgebra = "0.16.12"
+nalgebra = "0.16.13"
 #ncollide3d = "*"
 #nphysics3d = "*"
 
