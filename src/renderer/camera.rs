@@ -35,7 +35,7 @@ impl Camera {
     }
 
     pub fn projection(&self) -> [[f32; 4]; 4] {
-        let mut p: [[f32; 4]; 4] = self.projection.unwrap().into();
+        let mut p: [[f32; 4]; 4] = self.projection.into_inner().into();
 
         // Flip the y-axis
         p[1][1] *= -1.0;
