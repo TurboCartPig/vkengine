@@ -1,15 +1,10 @@
 use crate::renderer::shaders::VertexInput;
-use genmesh::{
-    generators::{
-        Circle, Cone, Cube, Cylinder, IcoSphere, IndexedPolygon, Plane, SharedVertex, SphereUv,
-        Torus,
-    },
-    EmitTriangles, MapVertex, Triangle, Triangulate, Vertex as GenMeshVertex, Vertices,
-};
 use log::info;
+use nalgebra::Vector3;
+use ncollide3d::procedural;
 use specs::{Component, DenseVecStorage, HashMapStorage};
 use specs_derive::Component;
-use std::{fmt::Debug, sync::Arc};
+use std::sync::Arc;
 use vulkano::{
     buffer::{
         cpu_pool::{CpuBufferPool, CpuBufferPoolSubbuffer},
@@ -31,42 +26,78 @@ pub struct Vertex {
 impl_vertex!(Vertex, position, normal);
 
 /// Primitive shapes
-#[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 pub enum Shape {
     /// Sphere, number of points around the equator, number of points pole to pole
-    Sphere(usize, usize),
+    Sphere(u32, u32),
     /// Cone, number of subdivisions around the radius, must be > 1
-    Cone(usize),
+    Cone(u32),
     /// Cube
     Cube,
-    /// Cylinder, number of points across the radius, optional subdivides along the height
-    Cylinder(usize, Option<usize>),
-    /// Torus, radius from origin to center of tubular, tubular radius from toridal to surface,
-    /// number of tube segments >= 3, number of segments around the tube
-    Torus(f32, f32, usize, usize),
-    /// Icosahedral sphere, number of subdivisions > 0 if given
-    IcoSphere(Option<usize>),
+    /// Cylinder, number of points across the radius
+    Cylinder(u32),
     /// Plane, number of subdivisions along x and y axis if given
-    Plane(Option<(usize, usize)>),
-    /// Circle, number of points around the circle
-    Circle(usize),
+    Quad(u32, u32),
+    /// Capsule, number of subdivides around and across the capsule
+    Capsule(u32, u32),
 }
 
 /// MeshBuilder created by gameplay systems or from prefab and then built by the renderer
-#[derive(Component)]
+#[derive(Component, Default, Debug)]
 #[storage(HashMapStorage)]
 pub struct MeshBuilder {
-    shape: Shape,
+    vertex_data: Vec<Vertex>,
+    index_data: Vec<u32>,
 }
 
 impl MeshBuilder {
-    pub fn from_shape(shape: Shape) -> Self {
-        Self { shape }
+    pub fn new() -> Self {
+        Self {
+            vertex_data: Vec::new(),
+            index_data: Vec::new(),
+        }
+    }
+
+    pub fn with_shape(mut self, shape: Shape) -> Self {
+         let mut trimesh = match shape {
+            Shape::Sphere(u, v) => procedural::sphere(1.0, u, v, false),
+            Shape::Cone(u) => procedural::cone(1.0, 1.0, u),
+            Shape::Cube => procedural::cuboid(&Vector3::new(1.0, 1.0, 1.0)),
+            Shape::Cylinder(u) => procedural::cylinder(1.0, 1.0, u),
+            Shape::Quad(u, v) => procedural::quad(1.0, 1.0, u as usize, v as usize),
+            Shape::Capsule(u, v) => procedural::capsule(&1.0, &1.0, u, v),
+        };
+
+        trimesh.unify_index_buffer();
+        trimesh.recompute_normals();
+
+        self.index_data = trimesh.flat_indices();
+
+        let vertex_iter = trimesh.coords.into_iter();
+        let normal_iter = trimesh.normals.as_ref().unwrap().iter().cloned();
+
+        self.vertex_data = vertex_iter
+            .zip(normal_iter)
+            .map(|(position, normal)| Vertex {
+                position: position.coords.into(),
+                normal: normal.into(),
+            })
+            .collect::<Vec<_>>();
+
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_indexed_vertices(mut self, index_data: Vec<u32>, vertex_data: Vec<Vertex>) -> Self {
+        self.index_data = index_data;
+        self.vertex_data = vertex_data;
+
+        self
     }
 
     pub fn build(
-        &mut self,
+        self,
         device: Arc<Device>,
         vertex_input_pool: &CpuBufferPool<VertexInput>,
         vertex_input: VertexInput,
@@ -74,43 +105,21 @@ impl MeshBuilder {
             Arc<GraphicsPipelineAbstract + Send + Sync>,
         >,
     ) -> MeshComponent {
-        let vertex_data = match self.shape {
-            Shape::Sphere(u, v) => generate_v(SphereUv::new(u, v)),
-            Shape::Cone(u) => generate_v(Cone::new(u)),
-            Shape::Cube => generate_v(Cube::new()),
-            Shape::Cylinder(u, h) => {
-                if let Some(h) = h {
-                    generate_v(Cylinder::subdivide(u, h))
-                } else {
-                    generate_v(Cylinder::new(u))
-                }
-            }
-            Shape::Torus(radius, tubular_radius, redial_segments, tubular_segments) => generate_v(
-                Torus::new(radius, tubular_radius, redial_segments, tubular_segments),
-            ),
-            Shape::IcoSphere(subdivisions) => {
-                if let Some(subdivisions) = subdivisions {
-                    generate_v(IcoSphere::subdivide(subdivisions))
-                } else {
-                    generate_v(IcoSphere::new())
-                }
-            }
-            Shape::Plane(subdivisions) => {
-                if let Some((x, y)) = subdivisions {
-                    generate_v(Plane::subdivide(x, y))
-                } else {
-                    generate_v(Plane::new())
-                }
-            }
-            Shape::Circle(u) => generate_v(Circle::new(u)),
-        };
+        info!("Building mesh from: Vertices: {:?}, Indices: {:?}", self.vertex_data, self.index_data);
 
-        let vertex_buffer = CpuAccessibleBuffer::from_iter(
+       let vertex_buffer = CpuAccessibleBuffer::from_iter(
             device.clone(),
             BufferUsage::vertex_buffer(),
-            vertex_data.iter().cloned(),
+            self.vertex_data.into_iter(),
         )
         .expect("Failed to create vertex buffer");
+
+        let index_buffer = CpuAccessibleBuffer::from_iter(
+            device.clone(),
+            BufferUsage::index_buffer(),
+            self.index_data.into_iter(),
+        )
+        .expect("Failed to create index buffer");
 
         let vertex_uniforms = Arc::new(vertex_input_pool.next(vertex_input).unwrap());
 
@@ -125,6 +134,7 @@ impl MeshBuilder {
 
         MeshComponent {
             vertex_buffer,
+            index_buffer,
             vertex_uniforms,
             descriptor_set,
         }
@@ -135,76 +145,7 @@ impl MeshBuilder {
 #[derive(Component)]
 pub struct MeshComponent {
     pub vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    // pub index_buffer: Arc<CpuAccessibleBuffer<[u16]>>,
+    pub index_buffer: Arc<CpuAccessibleBuffer<[u32]>>,
     pub vertex_uniforms: Arc<CpuBufferPoolSubbuffer<VertexInput, Arc<StdMemoryPool>>>,
     pub descriptor_set: Arc<DescriptorSet + Send + Sync>,
-}
-
-// Generates vertices based on shape generate
-#[allow(dead_code)]
-fn generate_v<F, P, G>(generator: G) -> Vec<Vertex>
-where
-    F: EmitTriangles<Vertex = GenMeshVertex>,
-    F::Vertex: Clone + Copy + Debug + PartialEq,
-    P: EmitTriangles<Vertex = usize>,
-    G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
-{
-    let vertices: Vec<_> = generator.shared_vertex_iter().collect();
-
-    info!("Shared vertices: {:?}", vertices.len());
-
-    let vertices: Vec<_> = generator
-        .indexed_polygon_iter()
-        .triangulate()
-        // Get the vertex
-        .map(|f| {
-            f.map_vertex(|u| {
-                let vertex = vertices[u];
-
-                vertex
-            })
-        })
-        .vertices()
-        // Turn GenMeshVertex into renderer::Vertex
-        .map(|v| Vertex {
-            position: v.pos.into(),
-            normal: v.normal.into(),
-        })
-        .collect();
-
-    info!("Shared vertices: {:?}", vertices.len());
-
-    vertices
-}
-
-// FIXME This requires optimization
-// Generates vertecies and indecies based on shape generator
-#[allow(dead_code)]
-fn generate_vi<F, P, G>(generator: G) -> (Vec<Vertex>, Vec<u16>)
-where
-    F: EmitTriangles<Vertex = GenMeshVertex>,
-    F::Vertex: Clone + Copy + Debug + PartialEq,
-    P: EmitTriangles<Vertex = usize>,
-    G: SharedVertex<F::Vertex> + IndexedPolygon<P> + Iterator<Item = F>,
-{
-    // let indexed_polygons = generator
-    let indecies = generator
-        .indexed_polygon_iter()
-        .triangulate()
-        .map(|Triangle { x, y, z }| [x as u16, y as u16, z as u16])
-        .collect::<Vec<_>>();
-
-    let indecies = indecies.iter().flatten().map(|i| *i).collect();
-
-    let shared_vertecies = generator.shared_vertex_iter().collect::<Vec<_>>();
-
-    let shared_vertecies = shared_vertecies
-        .iter()
-        .map(|v| Vertex {
-            position: v.pos.into(),
-            normal: v.normal.into(),
-        })
-        .collect::<Vec<_>>();
-
-    (shared_vertecies, indecies)
 }

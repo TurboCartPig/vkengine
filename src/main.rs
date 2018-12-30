@@ -68,14 +68,14 @@ fn main() {
         .create_entity()
         .with(Link::new(parent))
         .with(Transform::default())
-        .with(MeshBuilder::from_shape(Shape::Sphere(100, 100)))
+        .with(MeshBuilder::new().with_shape(Shape::Sphere(100, 100)))
         .build();
 
     // Cylinder
     world
         .create_entity()
         .with(Transform::from(Vector3::new(5.0, 1.0, -7.0)))
-        .with(MeshBuilder::from_shape(Shape::Cylinder(40, Some(30))))
+        .with(MeshBuilder::new().with_shape(Shape::Cylinder(40)))
         .with(PointLightComponent::from_color(Vector3::new(0.0, 0.0, 1.0)))
         .build();
 
@@ -83,7 +83,7 @@ fn main() {
     world
         .create_entity()
         .with(Transform::from(Vector3::new(-2.0, -4.0, 5.0)))
-        .with(MeshBuilder::from_shape(Shape::Cube))
+        .with(MeshBuilder::new().with_shape(Shape::Cube))
         .build();
 
     // Camera

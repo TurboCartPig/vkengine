@@ -463,24 +463,25 @@ impl<'a> System<'a> for Renderer {
 
         {
             // Build mesh components from mesh builders
-            for (entity, builder, global) in (&entities, &mut mesh_builders, &globals).join() {
-                let vertex = VertexInput {
-                    // model: global.to_view_matrix().into(),
-                    model: global.to_matrix().into(),
-                };
+            (&entities, &globals, &mesh_builders.mask().clone())
+                .join()
+                .for_each(|(entity, global, _)| {
+                    let builder = mesh_builders.remove(entity).unwrap();
 
-                let mesh = builder.build(
-                    self.device.clone(),
-                    &self.vertex_input_pool,
-                    vertex,
-                    &mut self.descriptor_set_pool,
-                );
+                    let vertex = VertexInput {
+                        // model: global.to_view_matrix().into(),
+                        model: global.to_matrix().into(),
+                    };
 
-                meshes.insert(entity, mesh).unwrap();
-            }
+                    let mesh = builder.build(
+                        self.device.clone(),
+                        &self.vertex_input_pool,
+                        vertex,
+                        &mut self.descriptor_set_pool,
+                    );
 
-            // All meshes are built and we can get rid of builders
-            mesh_builders.clear();
+                    meshes.insert(entity, mesh).unwrap();
+                });
         }
 
         // Update buffers
@@ -602,10 +603,18 @@ impl<'a> System<'a> for Renderer {
                         self.graphics_pipeline.clone().subpass(),
                     )
                     .unwrap()
-                    .draw(
+                    // .draw(
+                    //     self.graphics_pipeline.clone(),
+                    //     &self.dynamic_state,
+                    //     vec![mesh.vertex_buffer.clone()],
+                    //     descriptor_sets,
+                    //     pc,
+                    // )
+                    .draw_indexed(
                         self.graphics_pipeline.clone(),
                         &self.dynamic_state,
                         vec![mesh.vertex_buffer.clone()],
+                        mesh.index_buffer.clone(),
                         descriptor_sets,
                         pc,
                     )

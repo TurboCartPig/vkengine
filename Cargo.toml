@@ -23,12 +23,7 @@ env_logger = "0.6.0"
 # Math and physics
 alga = "0.7.2"
 nalgebra = "0.16.13"
-#ncollide3d = "*"
-#nphysics3d = "*"
-
-# Mesh
-#glft = "*"
-genmesh = "0.6.2"
+ncollide3d = "0.17.3"
 
 specs = "0.14.1"
 specs-derive = "0.3.0"

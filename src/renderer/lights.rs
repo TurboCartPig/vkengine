@@ -17,7 +17,7 @@ impl Default for DirectionalLightRes {
     fn default() -> Self {
         Self {
             // Down
-            direction: Vector3::new(0.0, 1.0, 0.0),
+            direction: Vector3::new(0.0, -1.0, 0.0),
             // White
             ambient: Vector3::new(1.0, 1.0, 1.0),
             diffuse: Vector3::new(1.0, 1.0, 1.0),
@@ -31,7 +31,7 @@ impl DirectionalLightRes {
     pub fn new(direction: Vector3<f32>, color: Vector3<f32>) -> Self {
         Self {
             direction,
-            ambient: color * 0.2,
+            ambient: color,
             diffuse: color,
             specular: Vector3::new(1.0, 1.0, 1.0),
             dirty: true,
@@ -75,7 +75,7 @@ impl PointLightComponent {
             linear: 0.09,
             quadratic: 0.032,
             // Scale the diffuse color for ambient
-            ambient: color * 0.2,
+            ambient: color,
             diffuse: color,
             specular: Vector3::new(1.0, 1.0, 1.0),
         }
