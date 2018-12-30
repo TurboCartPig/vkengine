@@ -26,7 +26,7 @@ const Material MATERIAL = Material(
 );
 
 vec3 calc_directional_light(DirectionalLight light, vec3 normal, vec3 view_dir) {
-	vec3 light_dir = normalize(light.direction);
+	vec3 light_dir = normalize(-light.direction);
 
 	// Diffuse
     float brightness = max(dot(normal, light_dir), 0.0);
@@ -39,7 +39,7 @@ vec3 calc_directional_light(DirectionalLight light, vec3 normal, vec3 view_dir) 
 	vec3 diffuse = light.diffuse * brightness * MATERIAL.diffuse;
 	vec3 specular = light.specular * spec * MATERIAL.specular;
 
-	return (ambient + diffuse + specular);
+	return (ambient + diffuse + specular) * 0.5;
 }
 
 vec3 calc_point_light(PointLight light, vec3 normal, vec3 view_dir, vec3 frag_pos) {
