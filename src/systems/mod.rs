@@ -294,8 +294,10 @@ impl<'a> System<'a> for PlacerSystem {
             let mut transform = camera_t.clone();
             transform.translate_forward(5.0);
 
+            use crate::renderer::geometry::{MeshBuilder, Shape};
             lazy.create_entity(&entities)
                 .with(transform)
+                .with(MeshBuilder::new().with_shape(Shape::Cube))
                 .with(PointLightComponent::from_color(Vector3::new(0.0, 1.0, 0.0)))
                 .build();
         }
