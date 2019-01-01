@@ -42,6 +42,13 @@ pub struct Transform {
 }
 
 impl Transform {
+    pub fn from_parts(translation: Vector3<f32>, quat: UnitQuaternion<f32>, scale: Vector3<f32>) -> Self {
+        Self {
+            iso: Isometry3::from_parts(Translation3::from(translation), quat),
+            scale,
+        }
+    }
+
     pub fn to_matrix(&self) -> Matrix4<f32> {
         self.iso
             .to_homogeneous()

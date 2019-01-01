@@ -1,9 +1,12 @@
 use crate::renderer::shaders::VertexInput;
+use gltf;
 use log::info;
 use nalgebra::Vector3;
 use ncollide3d::procedural;
 use specs::{Component, DenseVecStorage, HashMapStorage};
 use specs_derive::Component;
+use std::env;
+use std::path::PathBuf;
 use std::sync::Arc;
 use vulkano::{
     buffer::{
@@ -60,7 +63,7 @@ impl MeshBuilder {
     }
 
     pub fn with_shape(mut self, shape: Shape) -> Self {
-         let mut trimesh = match shape {
+        let mut trimesh = match shape {
             Shape::Sphere(u, v) => procedural::sphere(1.0, u, v, false),
             Shape::Cone(u) => procedural::cone(1.0, 1.0, u),
             Shape::Cube => procedural::cuboid(&Vector3::new(1.0, 1.0, 1.0)),
@@ -75,7 +78,7 @@ impl MeshBuilder {
         self.index_data = trimesh.flat_indices();
 
         let vertex_iter = trimesh.coords.into_iter();
-        let normal_iter = trimesh.normals.as_ref().unwrap().iter().cloned();
+        let normal_iter = trimesh.normals.unwrap().into_iter();
 
         self.vertex_data = vertex_iter
             .zip(normal_iter)
@@ -88,10 +91,44 @@ impl MeshBuilder {
         self
     }
 
-    #[allow(dead_code)]
-    pub fn with_indexed_vertices(mut self, index_data: Vec<u32>, vertex_data: Vec<Vertex>) -> Self {
-        self.index_data = index_data;
-        self.vertex_data = vertex_data;
+    pub fn with_gltf_file(mut self, file: &str) -> Self {
+        let file = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("resources")
+            .join(file);
+
+        println!("Loading file: {:?}", file);
+
+        let (gltf, buffers, _) = gltf::import(file).expect("Failed to import gltf document");
+
+        println!("Parsing file");
+
+        // Get the first scene
+        let scene = gltf.scenes().next().unwrap();
+
+        // FIXME Only supports one mesh
+        // Go through the nodes and add the meshes to vertex_data
+        scene.nodes().for_each(|node| {
+            if let Some(mesh) = node.mesh() {
+                println!("Node: {:?}, has a mesh", node.index());
+
+                mesh.primitives().for_each(|primitive| {
+                    let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+                    if let (Some(positions), Some(normals)) =
+                        (reader.read_positions(), reader.read_normals())
+                    {
+                        println!("Writing vertex and index data");
+
+                        self.vertex_data = positions
+                            .zip(normals)
+                            .map(|(position, normal)| Vertex { position, normal })
+                            .collect();
+
+                        self.index_data = reader.read_indices().unwrap().into_u32().collect();
+                    }
+                });
+            }
+        });
 
         self
     }
@@ -105,9 +142,12 @@ impl MeshBuilder {
             Arc<GraphicsPipelineAbstract + Send + Sync>,
         >,
     ) -> MeshComponent {
-        info!("Building mesh from: Vertices: {:?}, Indices: {:?}", self.vertex_data, self.index_data);
+        info!(
+            "Building mesh from: Vertices: {:?}, Indices: {:?}",
+            self.vertex_data, self.index_data
+        );
 
-       let vertex_buffer = CpuAccessibleBuffer::from_iter(
+        let vertex_buffer = CpuAccessibleBuffer::from_iter(
             device.clone(),
             BufferUsage::vertex_buffer(),
             self.vertex_data.into_iter(),

@@ -17,9 +17,11 @@ use crate::{
         TransformSystem,
     },
 };
+use nalgebra::UnitQuaternion;
 use nalgebra::Vector3;
 use specs::prelude::*;
 use specs_hierarchy::HierarchySystem;
+use std::f32::consts::FRAC_PI_2;
 
 //TODO Mesh loading
 //TODO Use glyph-brush for text
@@ -68,7 +70,11 @@ fn main() {
         .create_entity()
         .with(Link::new(parent))
         .with(Transform::default())
-        .with(MeshBuilder::new().with_shape(Shape::Sphere(100, 100)))
+        .with(
+            MeshBuilder::new()
+                // .with_shape(Shape::Sphere(100, 100))
+                .with_gltf_file("glTF-Sample-Models/2.0/Suzanne/glTF/Suzanne.gltf"), // .with_gltf_file("glTF-Sample-Models/2.0/Sponza/glTF/Sponza.gltf")
+        )
         .build();
 
     // Cylinder
@@ -84,6 +90,17 @@ fn main() {
         .create_entity()
         .with(Transform::from(Vector3::new(-2.0, -4.0, 5.0)))
         .with(MeshBuilder::new().with_shape(Shape::Cube))
+        .build();
+
+    // Plane
+    world
+        .create_entity()
+        .with(Transform::from_parts(
+            Vector3::new(0.0, -10.0, 0.0),
+            UnitQuaternion::from_axis_angle(&Vector3::x_axis(), FRAC_PI_2),
+            Vector3::new(100.0, 100.0, 1.0),
+        ))
+        .with(MeshBuilder::new().with_shape(Shape::Quad(4, 4)))
         .build();
 
     // Camera

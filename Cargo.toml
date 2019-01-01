@@ -12,6 +12,8 @@ sdl2 = { version = "0.32.1", default-features = false, features = ["bundled", "s
 vulkano = { git = "https://github.com/vulkano-rs/vulkano", package = "vulkano" }
 vulkano-shaders = { git = "https://github.com/vulkano-rs/vulkano", package = "vulkano-shaders" }
 
+gltf = "0.11.2"
+
 float_duration = "0.3.3"
 hibitset = "0.5.3"
 fixedbitset = "0.1.9"
@@ -25,6 +27,7 @@ alga = "0.7.2"
 nalgebra = "0.16.13"
 ncollide3d = "0.17.3"
 
+# ECS
 specs = "0.14.1"
 specs-derive = "0.3.0"
 specs-hierarchy = "0.3.0"
